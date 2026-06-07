@@ -19,6 +19,12 @@ _429_THRESHOLD = 3
 _429_COOLDOWN_SECS = 120
 _400_COOLDOWN_SECS = 300
 
+# ModelScope 限额响应头名称
+HEADER_MODEL_LIMIT = "modelscope-ratelimit-model-requests-limit"
+HEADER_MODEL_REMAINING = "modelscope-ratelimit-model-requests-remaining"
+HEADER_USER_LIMIT = "modelscope-ratelimit-requests-limit"
+HEADER_USER_REMAINING = "modelscope-ratelimit-requests-remaining"
+
 
 class ModelManager:
     """管理可用模型列表和故障标记"""
@@ -35,6 +41,8 @@ class ModelManager:
         self._min_param_b = min_param_b
         self._custom_model_list = custom_model_list or []
         self._cache_file = data_dir / "model_cache.json"
+        # 是否所有模型都因用户额度用尽而禁用
+        self._user_quota_exhausted = False
 
     @property
     def models(self) -> list[dict]:
@@ -57,12 +65,10 @@ class ModelManager:
         logger.info("开始刷新模型列表...")
 
         if self._custom_model_list:
-            # 自定义模式：使用用户指定的模型列表
             new_models = [{"id": mid, "param_b": 999.0}
                           for mid in self._custom_model_list]
             logger.info(f"使用自定义模型列表，共 {len(new_models)} 个模型")
         else:
-            # 自动模式：从 ModelScope API 拉取
             if not api_key:
                 logger.warning("API Key 为空，无法刷新模型列表")
                 return
@@ -81,7 +87,7 @@ class ModelManager:
             self._models = new_models
             self._current_index = 0
 
-            # 清理过期禁用/冷却记录
+            # 刷新时清除所有旧的禁用/冷却状态（新的一天）
             today = date.today()
             self._disabled = {k: v for k, v in self._disabled.items()
                               if v >= today}
@@ -90,6 +96,7 @@ class ModelManager:
                               if v > now}
             self._429_count = {k: v for k, v in self._429_count.items()
                                if k in self._cooldown}
+            self._user_quota_exhausted = False
 
             self._save_cache()
 
@@ -102,6 +109,10 @@ class ModelManager:
     def get_current_model(self) -> dict | None:
         """获取当前可用的模型"""
         with self._lock:
+            if self._user_quota_exhausted:
+                logger.warning("用户额度已用尽，无可用模型")
+                return None
+
             today = date.today()
             self._disabled = {k: v for k, v in self._disabled.items()
                               if v >= today}
@@ -182,6 +193,127 @@ class ModelManager:
         with self._lock:
             self._429_count.pop(model_id, None)
 
+    def check_quota_headers(self, model_id: str,
+                            resp_headers) -> tuple[bool, bool]:
+        """从 ModelScope 响应头解析限额信息，提前禁用额度用尽的模型
+
+        比依赖 429 更精准：200 成功响应也能看出还剩多少额度。
+
+        Args:
+            model_id: 当前请求的模型 ID
+            resp_headers: httpx 响应头对象（类似 dict）
+
+        Returns:
+            (model_exhausted, user_exhausted)
+            - model_exhausted: 当前模型额度用尽，需要切下一个
+            - user_exhausted: 用户总配额用尽，所有模型不可用
+        """
+        # 尝试读取模型维度额度
+        try:
+            model_remaining = resp_headers.get(HEADER_MODEL_REMAINING)
+            model_limit = resp_headers.get(HEADER_MODEL_LIMIT)
+        except Exception:
+            model_remaining = None
+            model_limit = None
+
+        # 尝试读取用户维度额度
+        try:
+            user_remaining = resp_headers.get(HEADER_USER_REMAINING)
+            user_limit = resp_headers.get(HEADER_USER_LIMIT)
+        except Exception:
+            user_remaining = None
+            user_limit = None
+
+        if model_remaining is None and user_remaining is None:
+            # 没有限额信息，不做处理
+            return False, False
+
+        model_exhausted = False
+        user_exhausted = False
+
+        # 检查模型维度：该模型额度用尽
+        if model_remaining is not None:
+            try:
+                model_rem = int(model_remaining)
+                model_lim = int(model_limit) if model_limit else 0
+                if model_rem <= 0:
+                    self.mark_quota_exhausted(
+                        model_id,
+                        remaining=model_rem,
+                        limit=model_lim,
+                        reason="模型额度用尽（通过响应头检测）",
+                    )
+                    model_exhausted = True
+            except (ValueError, TypeError):
+                pass
+
+        # 检查用户维度：整体额度用尽
+        if user_remaining is not None:
+            try:
+                user_rem = int(user_remaining)
+                user_lim = int(user_limit) if user_limit else 0
+                if user_rem <= 0:
+                    self.mark_all_disabled(
+                        reason=f"用户总配额用尽 ({user_rem}/{user_lim})"
+                    )
+                    user_exhausted = True
+            except (ValueError, TypeError):
+                pass
+
+        # 日志：记录当前额度情况
+        if model_remaining is not None or user_remaining is not None:
+            model_str = (f"模型剩余: {model_remaining}/{model_limit}"
+                         ) if model_remaining else "模型额度: N/A"
+            user_str = (f"用户剩余: {user_remaining}/{user_limit}"
+                        ) if user_remaining else "用户额度: N/A"
+            logger.debug(
+                f"限额状态 [{model_id}] — {model_str}, {user_str}"
+            )
+
+        return model_exhausted, user_exhausted
+
+    def mark_quota_exhausted(self, model_id: str, remaining: int = 0,
+                             limit: int = 0, reason: str = ""):
+        """基于响应头中的剩余额度信息，标记模型额度用尽
+
+        和 mark_disabled 的区别：这是在收到成功响应但剩余额度为 0 时触发，
+        比等到 429 再处理更提前、更精准。
+        """
+        with self._lock:
+            self._disabled[model_id] = date.today()
+            self._429_count.pop(model_id, None)
+            self._cooldown.pop(model_id, None)
+            self._switch_next()
+            remaining_cnt = sum(1 for m in self._models
+                                if self._is_available(m["id"]))
+        limit_str = f"/{limit}" if limit else ""
+        logger.warning(
+            f"模型 {model_id} 额度已用尽 "
+            f"(剩余: {remaining}{limit_str}), "
+            f"基于响应头提前标记为今日不可用, "
+            f"剩余可用: {remaining_cnt}/{len(self._models)}, "
+            f"原因: {reason}"
+        )
+
+    def mark_all_disabled(self, reason: str = ""):
+        """用户整体额度用尽时，禁用所有模型"""
+        with self._lock:
+            today = date.today()
+            for m in self._models:
+                self._disabled[m["id"]] = today
+            self._429_count.clear()
+            self._cooldown.clear()
+            self._user_quota_exhausted = True
+        logger.warning(
+            f"用户总配额已用尽 (原因: {reason}), "
+            f"所有 {len(self._models)} 个模型已禁用，等待次日刷新"
+        )
+
+    def is_user_quota_exhausted(self) -> bool:
+        """检查用户额度是否已用尽"""
+        with self._lock:
+            return self._user_quota_exhausted
+
     def _switch_next(self):
         """切换到下一个可用模型的索引"""
         for i in range(1, len(self._models)):
@@ -222,6 +354,7 @@ class ModelManager:
                 "active": len(active),
                 "disabled_today": len(disabled),
                 "cooldown_count": len(cooldown_list),
+                "user_quota_exhausted": self._user_quota_exhausted,
                 "current_model": current,
                 "disabled_list": disabled,
                 "cooldown_list": cooldown_list,
