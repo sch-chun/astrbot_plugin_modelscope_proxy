@@ -44,8 +44,10 @@ def create_proxy_router(config, model_manager):
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, headers=headers, json=body)
 
-        base_url = config.base_url
-        api_key = config.api_key
+        # ── 限额检测（在任何状态码处理前先读取响应头）──
+        model_exhausted, user_exhausted = model_manager.check_quota_headers(
+            model_id, resp.headers
+        )
 
         if resp.status_code in (404, 500, 502, 503):
             error_msg = f"HTTP {resp.status_code}"
@@ -56,6 +58,18 @@ def create_proxy_router(config, model_manager):
                 error_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
             logger.warning(f"模型 {model_id} 不可恢复错误: {error_msg}")
             stats.record_error(model_id, resp.status_code)
+            # 如果用户额度已经用尽，直接返回 503 不再尝试
+            if user_exhausted:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": {
+                            "message": "当日 API 额度已用尽",
+                            "type": "quota_exhausted",
+                            "code": "user_quota_exhausted",
+                        }
+                    },
+                )
             model_manager.mark_disabled(model_id, error_msg)
             return await proxy_chat_completions(request, retry_count + 1)
 
@@ -68,13 +82,39 @@ def create_proxy_router(config, model_manager):
                 error_msg = f"HTTP 400: {resp.text[:200]}"
             logger.warning(f"模型 {model_id} 返回 400: {error_msg}")
             stats.record_error(model_id, 400)
+            if user_exhausted:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": {
+                            "message": "当日 API 额度已用尽",
+                            "type": "quota_exhausted",
+                            "code": "user_quota_exhausted",
+                        }
+                    },
+                )
             model_manager.mark_cooldown(model_id, error_msg)
             return await proxy_chat_completions(request, retry_count + 1)
 
         if resp.status_code == 429:
             logger.warning(f"模型 {model_id} 返回 429 限速")
             stats.record_error(model_id, 429)
-            model_manager.mark_429(model_id)
+            # 如果响应头已经表明模型额度用尽，直接禁用（比计数更精准）
+            if model_exhausted:
+                logger.info(f"模型 {model_id} 额度已用尽（通过响应头），直接禁用")
+            else:
+                model_manager.mark_429(model_id)
+            if user_exhausted:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": {
+                            "message": "当日 API 额度已用尽",
+                            "type": "quota_exhausted",
+                            "code": "user_quota_exhausted",
+                        }
+                    },
+                )
             return await proxy_chat_completions(request, retry_count + 1)
 
         if resp.status_code >= 400:
@@ -84,6 +124,15 @@ def create_proxy_router(config, model_manager):
                 content=resp.content,
                 status_code=resp.status_code,
                 headers={"Content-Type": "application/json"},
+            )
+
+        # ── 成功响应 ──
+        # 即使响应成功，也要检查限额。如果用户额度已用尽，返回 503
+        # （模型额度用尽则 mark_quota_exhausted 已标记，但本次请求成功仍返回结果）
+        if user_exhausted:
+            logger.warning(
+                f"模型 {model_id} 请求成功但用户额度已用尽，"
+                f"本次仍正常返回结果，后续请求将停止"
             )
 
         try:
@@ -102,7 +151,10 @@ def create_proxy_router(config, model_manager):
             stats.record_success(model_id)
             resp_content = resp.content
 
-        logger.info(f"模型 {model_id} 请求成功")
+        logger.info(
+            f"模型 {model_id} 请求成功"
+            f"{' (额度已尽，本次为末班车)' if user_exhausted else ''}"
+        )
         return Response(
             content=resp_content,
             status_code=resp.status_code,
@@ -131,6 +183,11 @@ def create_proxy_router(config, model_manager):
             req = client.stream("POST", url, headers=headers, json=body)
             resp = await req.__aenter__()
 
+            # 限额检测（在流式数据开始前检查响应头）
+            model_exhausted, user_exhausted = model_manager.check_quota_headers(
+                model_id, resp.headers
+            )
+
             if resp.status_code in (404, 500, 502, 503):
                 error_body = await resp.aread()
                 await req.__aexit__(None, None, None)
@@ -138,6 +195,17 @@ def create_proxy_router(config, model_manager):
                 error_msg = f"HTTP {resp.status_code}: {error_body.decode('utf-8', errors='replace')[:200]}"
                 logger.warning(f"模型 {model_id} 流式错误: {error_msg}")
                 stats.record_error(model_id, resp.status_code)
+                if user_exhausted:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "error": {
+                                "message": "当日 API 额度已用尽",
+                                "type": "quota_exhausted",
+                                "code": "user_quota_exhausted",
+                            }
+                        },
+                    )
                 model_manager.mark_disabled(model_id, error_msg)
                 return await proxy_chat_completions(request, retry_count + 1)
 
@@ -148,6 +216,17 @@ def create_proxy_router(config, model_manager):
                 error_msg = f"HTTP 400: {error_body.decode('utf-8', errors='replace')[:200]}"
                 logger.warning(f"模型 {model_id} 流式 400: {error_msg}")
                 stats.record_error(model_id, 400)
+                if user_exhausted:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "error": {
+                                "message": "当日 API 额度已用尽",
+                                "type": "quota_exhausted",
+                                "code": "user_quota_exhausted",
+                            }
+                        },
+                    )
                 model_manager.mark_cooldown(model_id, error_msg)
                 return await proxy_chat_completions(request, retry_count + 1)
 
@@ -157,7 +236,22 @@ def create_proxy_router(config, model_manager):
                 await client.aclose()
                 logger.warning(f"模型 {model_id} 流式 429 限速")
                 stats.record_error(model_id, 429)
-                model_manager.mark_429(model_id)
+                if model_exhausted:
+                    logger.info(
+                        f"模型 {model_id} 额度已用尽（通过响应头），直接禁用")
+                else:
+                    model_manager.mark_429(model_id)
+                if user_exhausted:
+                    return JSONResponse(
+                        status_code=503,
+                        content={
+                            "error": {
+                                "message": "当日 API 额度已用尽",
+                                "type": "quota_exhausted",
+                                "code": "user_quota_exhausted",
+                            }
+                        },
+                    )
                 return await proxy_chat_completions(request, retry_count + 1)
 
             if resp.status_code >= 400:
@@ -168,7 +262,13 @@ def create_proxy_router(config, model_manager):
                 stats.record_error(model_id, resp.status_code)
                 return Response(content=error_body, status_code=resp.status_code)
 
-            # 流式转发成功
+            # ── 流式转发成功 ──
+            if user_exhausted:
+                logger.warning(
+                    f"模型 {model_id} 流式请求成功但用户额度已用尽，"
+                    f"本次仍正常返回流，后续请求将停止"
+                )
+
             first_chunk_done = False
             usage_buffer = []
 
@@ -262,6 +362,21 @@ def create_proxy_router(config, model_manager):
     async def proxy_chat_completions(request: Request,
                                      _retry_count: int = 0):
         """OpenAI 兼容的 chat completions 端点"""
+        # 如果用户额度已用尽，直接返回 503，不再尝试任何模型
+        if model_manager.is_user_quota_exhausted():
+            logger.warning("用户额度已用尽，拒绝请求")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "message": "当日 API 额度已用尽，"
+                                   "请明天再试或更换 API Key",
+                        "type": "quota_exhausted",
+                        "code": "user_quota_exhausted",
+                    }
+                },
+            )
+
         if _retry_count >= MAX_RETRIES:
             return JSONResponse(
                 status_code=503,
