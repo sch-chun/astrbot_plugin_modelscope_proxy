@@ -8,7 +8,7 @@
   "proxy_port": {
     "description": "代理服务监听端口",
     "type": "int",
-    "default": 8000
+    "default": 3473
   },
   "virtual_model_name": {
     "description": "对外暴露的虚拟模型名",

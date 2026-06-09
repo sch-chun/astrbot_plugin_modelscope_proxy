@@ -3,10 +3,10 @@
 按参数量从大到小排序，过滤掉不适合编码的模型（图像/视频/多模态/推理专用/基座模型等）。
 """
 import re
-import logging
 import httpx
+import asyncio
 
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 # 需要排除的关键词
 EXCLUDE_KEYWORDS = [
@@ -93,37 +93,37 @@ def is_text_model(model_id: str) -> bool:
     return True
 
 
-def fetch_models_from_api(api_key: str, base_url: str) -> list[dict]:
+async def fetch_models_from_api(api_key: str, base_url: str) -> list[dict]:
     """从 ModelScope API 获取模型列表"""
     url = f"{base_url}/models"
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    try:
-        with httpx.Client(timeout=30) as client:
-            resp = client.get(url, headers=headers)
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json()
-        models = data.get("data", [])
-        logger.info(f"从 ModelScope API 获取到 {len(models)} 个模型")
-        return models
-    except httpx.HTTPStatusError as e:
-        logger.error(f"获取模型列表失败 (HTTP {e.response.status_code}): {e}")
-        return []
-    except Exception as e:
-        logger.error(f"获取模型列表异常: {e}")
-        return []
+            models = data.get("data", [])
+            logger.info(f"从 ModelScope API 获取到 {len(models)} 个模型")
+            return models
+        except httpx.HTTPStatusError as e:
+            logger.error(f"获取模型列表失败 (HTTP {e.response.status_code}): {e}")
+            return []
+        except Exception as e:
+            logger.error(f"获取模型列表异常: {e}")
+            return []
 
 
-def fetch_model_detail(model_id: str) -> dict | None:
+async def fetch_model_detail(model_id: str) -> dict | None:
     """从 ModelScope hub API 获取模型详细信息"""
     url = f"https://modelscope.cn/api/v1/models/{model_id}"
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(url)
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.get(url)
             if resp.status_code == 200:
-                return resp.json().get("Data", {})
-    except Exception:
-        pass
+                return resp.json().get("data", {})
+        except Exception:
+            pass
     return None
 
 
@@ -135,9 +135,9 @@ def estimate_param_from_storage(storage_size: int) -> float:
     return round(estimated_b, 1)
 
 
-def get_filtered_models(api_key: str, base_url: str, min_param_b: int = 4) -> list[dict]:
+async def get_filtered_models(api_key: str, base_url: str, min_param_b: int = 4) -> list[dict]:
     """获取过滤后的文本大模型列表，按参数量从大到小排序"""
-    raw_models = fetch_models_from_api(api_key, base_url)
+    raw_models = await fetch_models_from_api(api_key, base_url)
     if not raw_models:
         logger.warning("未获取到任何模型，返回空列表")
         return []
@@ -157,20 +157,16 @@ def get_filtered_models(api_key: str, base_url: str, min_param_b: int = 4) -> li
     storage_map: dict[str, int] = {}
     if models_need_detail:
         logger.info(f"需要从 hub API 获取参数量的模型: {len(models_need_detail)} 个")
-        for mid in models_need_detail:
-            detail = fetch_model_detail(mid)
-            if detail:
-                ss = detail.get("StorageSize", 0)
-                if ss:
-                    storage_map[mid] = ss
+        detail_tasks = [fetch_model_detail(mid) for mid in models_need_detail]
+        details = await asyncio.gather(*detail_tasks, return_exceptions=True)
+        for mid, detail in zip(models_need_detail, details):
+            if isinstance(detail, dict) and detail.get("StorageSize"):
+                storage_map[mid] = detail["StorageSize"]
 
     filtered = []
     for m in raw_models:
         model_id = m.get("id", "")
-        if not model_id:
-            continue
-        if not is_text_model(model_id):
-            logger.debug(f"排除非文本模型: {model_id}")
+        if not model_id or not is_text_model(model_id):
             continue
 
         param_b = parse_param_size(model_id)
@@ -179,7 +175,7 @@ def get_filtered_models(api_key: str, base_url: str, min_param_b: int = 4) -> li
                 param_b = estimate_param_from_storage(storage_map[model_id])
                 logger.info(f"从存储大小估算参数量: {model_id} -> {param_b}B")
             else:
-                param_b = 100.0
+                param_b = 10.0
                 logger.info(f"无法获取参数量，使用默认值: {model_id} -> {param_b}B")
 
         if param_b < min_param_b:

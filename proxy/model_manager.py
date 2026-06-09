@@ -6,14 +6,14 @@
 2. 自定义模式：使用用户指定的模型回退列表
 """
 import json
-import logging
 import threading
 from datetime import datetime, date, timedelta
 from pathlib import Path
+from typing import Optional
 
 from .model_fetcher import get_filtered_models
 
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 _429_THRESHOLD = 3
 _429_COOLDOWN_SECS = 120
@@ -30,7 +30,7 @@ class ModelManager:
     """管理可用模型列表和故障标记"""
 
     def __init__(self, data_dir: Path, min_param_b: int = 4,
-                 custom_model_list: list = None):
+                 custom_model_list: Optional[list] = None):
         self._lock = threading.Lock()
         self._models: list[dict] = []
         self._disabled: dict[str, date] = {}
@@ -41,8 +41,10 @@ class ModelManager:
         self._min_param_b = min_param_b
         self._custom_model_list = custom_model_list or []
         self._cache_file = data_dir / "model_cache.json"
+
         # 是否所有模型都因用户额度用尽而禁用
         self._user_quota_exhausted = False
+        self._user_quota_exhausted_date: Optional[date] = None
 
     @property
     def models(self) -> list[dict]:
@@ -60,7 +62,7 @@ class ModelManager:
             logger.info(f"模型 {model_id} 冷却已结束，重新可用")
         return True
 
-    def refresh_models(self, api_key: str = "", base_url: str = ""):
+    async def refresh_models(self, api_key: str = "", base_url: str = ""):
         """刷新模型列表"""
         logger.info("开始刷新模型列表...")
 
@@ -72,7 +74,7 @@ class ModelManager:
             if not api_key:
                 logger.warning("API Key 为空，无法刷新模型列表")
                 return
-            new_models = get_filtered_models(
+            new_models = await get_filtered_models(
                 api_key, base_url, self._min_param_b)
             if not new_models:
                 logger.warning("刷新模型列表为空，保留旧列表")
@@ -87,16 +89,11 @@ class ModelManager:
             self._models = new_models
             self._current_index = 0
 
-            # 刷新时清除所有旧的禁用/冷却状态（新的一天）
-            today = date.today()
-            self._disabled = {k: v for k, v in self._disabled.items()
-                              if v >= today}
-            now = datetime.now()
-            self._cooldown = {k: v for k, v in self._cooldown.items()
-                              if v > now}
-            self._429_count = {k: v for k, v in self._429_count.items()
-                               if k in self._cooldown}
-            self._user_quota_exhausted = False
+            # 同步更新禁用和冷却状态：移除已不存在的模型状态
+            for mid in removed_ids:
+                self._disabled.pop(mid, None)
+                self._cooldown.pop(mid, None)
+                self._429_count.pop(mid, None)
 
             self._save_cache()
 
@@ -304,6 +301,7 @@ class ModelManager:
             self._429_count.clear()
             self._cooldown.clear()
             self._user_quota_exhausted = True
+            self._user_quota_exhausted_date = today
         logger.warning(
             f"用户总配额已用尽 (原因: {reason}), "
             f"所有 {len(self._models)} 个模型已禁用，等待次日刷新"
@@ -405,3 +403,29 @@ class ModelManager:
         except Exception as e:
             logger.error(f"加载模型缓存失败: {e}")
         return False
+
+    def reset_daily_limits_if_new_day(self) -> bool:
+        """每天重置用户额度耗尽状态"""
+        today = date.today()
+        with self._lock:
+
+            # 重置用户额度标志（如果已标记且是之前的日期）
+            if self._user_quota_exhausted and self._user_quota_exhausted_date != today:
+                self._user_quota_exhausted = False
+                self._user_quota_exhausted_date = None
+                logger.info("跨日重置用户额度限制标志")
+
+            # 同时清理过期的禁用状态
+            expired_disabled = [mid for mid, d in self._disabled.items() if d < today]
+            for mid in expired_disabled:
+                del self._disabled[mid]
+
+            # 清理过期的冷却状态
+            now = datetime.now()
+            expired_cooldown = [mid for mid, until in self._cooldown.items() if until < now]
+            for mid in expired_cooldown:
+                del self._cooldown[mid]
+                self._429_count.pop(mid, None)
+
+            return len(expired_disabled) > 0 or len(expired_cooldown) > 0
+        
