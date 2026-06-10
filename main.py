@@ -5,7 +5,6 @@ ModelScope Auto Proxy — AstrBot 插件版 v0.1.0
 """
 import asyncio
 import threading
-from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -14,9 +13,9 @@ import socket
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 
-from proxy.config import ProxyConfig
-from proxy.model_manager import ModelManager
-from proxy.api_proxy import create_proxy_router
+from .proxy.config import ProxyConfig
+from .proxy.model_manager import ModelManager
+from .proxy.api_proxy import create_proxy_router
 
 from typing import Optional
 

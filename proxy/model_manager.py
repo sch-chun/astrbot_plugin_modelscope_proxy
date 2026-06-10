@@ -3,7 +3,6 @@
 """
 import asyncio
 from datetime import datetime, date, timedelta
-from pathlib import Path
 from typing import Optional
 
 from astrbot.api import logger
