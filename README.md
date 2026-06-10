@@ -48,12 +48,28 @@
 
 > 按优先级从上到下排列，前面的模型优先使用。额度用尽或不可用时自动切换到下一个。
 
-### 4. 使用
+### 4. 在 AstrBot 中添加模型提供商
 
-插件启动后，会在本地监听 `proxy_port` 配置的端口。任何 OpenAI 兼容的客户端，将 `base_url` 指向本插件即可使用：
+插件启动后，需要在 AstrBot 管理面板中配置模型提供商，让 AstrBot 能通过本插件调用模型：
+
+1. 进入管理面板 → **模型提供商**
+2. 添加一个 **OpenAI API 兼容** 的提供商
+3. 填写以下参数：
+
+| 参数 | 值 |
+|------|-----|
+| API URL | `http://127.0.0.1:3473/v1`（端口与你配置的 `proxy_port` 一致） |
+| API Key | **随便填一个非空字符串**（插件不校验 Key，但不能留空，否则 AstrBot 会报错） |
+| 模型名 | modelscope-auto（与 `virtual_model_name` 一致） |
+
+> API Key 随便填比如 `sk-placeholder` 就行了，只要不空就能用。
+
+### 5. 开始使用
+
+配置完成后，在 AstrBot 中就可以像用普通 OpenAI 模型一样使用 ModelScope 的免费模型了。对话时 AstrBot 会调用本插件，插件自动按优先级选择可用模型转发请求。
 
 ```bash
-# 例如使用 curl
+# 也可以直接用 curl 测试
 curl http://127.0.0.1:3473/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
