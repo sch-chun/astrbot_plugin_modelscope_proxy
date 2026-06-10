@@ -1,6 +1,6 @@
 name: modelscope_proxy
 display_name: ModelScope Proxy
-desc: ModelScope 免费大模型自动代理插件。自动从 ModelScope 获取可用模型列表，暴露 OpenAI 兼容的 API，支持自动故障切换和智能限速处理。
+desc: ModelScope 免费大模型自动代理插件。手动配置 model_list，暴露 OpenAI 兼容的 API，支持自动故障切换和智能限速处理。
 version: v0.1.0
 author: sch-chun
 repo: https://github.com/sch-chun/astrbot_plugin_modelscope_proxy

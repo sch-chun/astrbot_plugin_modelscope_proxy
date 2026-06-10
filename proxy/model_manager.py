@@ -1,17 +1,10 @@
 """
 模型管理模块 — 管理可用模型列表、故障标记、自动切换。
-
-支持两种模式：
-1. 自动模式：从 ModelScope API 拉取列表，按参数量排序
-2. 自定义模式：使用用户指定的模型回退列表
 """
-import json
-import threading
+import asyncio
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional
-
-from .model_fetcher import get_filtered_models
 
 from astrbot.api import logger
 
@@ -29,26 +22,21 @@ HEADER_USER_REMAINING = "modelscope-ratelimit-requests-remaining"
 class ModelManager:
     """管理可用模型列表和故障标记"""
 
-    def __init__(self, data_dir: Path, min_param_b: int = 4,
-                 custom_model_list: Optional[list] = None):
-        self._lock = threading.Lock()
-        self._models: list[dict] = []
+    def __init__(self, model_list: list) -> None:
+        self._lock = asyncio.Lock()
+        self._models: list = model_list
         self._disabled: dict[str, date] = {}
         self._cooldown: dict[str, datetime] = {}
         self._429_count: dict[str, int] = {}
         self._current_index: int = 0
-        self._data_dir = data_dir
-        self._min_param_b = min_param_b
-        self._custom_model_list = custom_model_list or []
-        self._cache_file = data_dir / "model_cache.json"
 
         # 是否所有模型都因用户额度用尽而禁用
-        self._user_quota_exhausted = False
+        self._user_quota_exhausted: bool = False
         self._user_quota_exhausted_date: Optional[date] = None
 
     @property
-    def models(self) -> list[dict]:
-        with self._lock:
+    async def models(self) -> list:
+        async with self._lock:
             return list(self._models)
 
     def _is_available(self, model_id: str) -> bool:
@@ -62,50 +50,9 @@ class ModelManager:
             logger.info(f"模型 {model_id} 冷却已结束，重新可用")
         return True
 
-    async def refresh_models(self, api_key: str = "", base_url: str = ""):
-        """刷新模型列表"""
-        logger.info("开始刷新模型列表...")
-
-        if self._custom_model_list:
-            new_models = [{"id": mid, "param_b": 999.0}
-                          for mid in self._custom_model_list]
-            logger.info(f"使用自定义模型列表，共 {len(new_models)} 个模型")
-        else:
-            if not api_key:
-                logger.warning("API Key 为空，无法刷新模型列表")
-                return
-            new_models = await get_filtered_models(
-                api_key, base_url, self._min_param_b)
-            if not new_models:
-                logger.warning("刷新模型列表为空，保留旧列表")
-                return
-
-        with self._lock:
-            old_ids = {m["id"] for m in self._models}
-            new_ids = {m["id"] for m in new_models}
-            added = new_ids - old_ids
-            removed_ids = old_ids - new_ids
-
-            self._models = new_models
-            self._current_index = 0
-
-            # 同步更新禁用和冷却状态：移除已不存在的模型状态
-            for mid in removed_ids:
-                self._disabled.pop(mid, None)
-                self._cooldown.pop(mid, None)
-                self._429_count.pop(mid, None)
-
-            self._save_cache()
-
-        if added:
-            logger.info(f"新增模型: {added}")
-        if removed_ids:
-            logger.info(f"移除模型: {removed_ids}")
-        logger.info(f"模型列表已刷新，共 {len(new_models)} 个模型")
-
-    def get_current_model(self) -> dict | None:
+    async def get_current_model(self) -> str | None:
         """获取当前可用的模型"""
-        with self._lock:
+        async with self._lock:
             if self._user_quota_exhausted:
                 logger.warning("用户额度已用尽，无可用模型")
                 return None
@@ -117,43 +64,43 @@ class ModelManager:
             for i in range(len(self._models)):
                 idx = (self._current_index + i) % len(self._models)
                 model = self._models[idx]
-                if self._is_available(model["id"]):
+                if self._is_available(model):
                     self._current_index = idx
                     return model
 
             logger.error(f"所有 {len(self._models)} 个模型当前均不可用！")
             return None
 
-    def mark_disabled(self, model_id: str, reason: str = ""):
+    async def mark_disabled(self, model_id: str, reason: str = ""):
         """将模型标记为今日不可用"""
-        with self._lock:
+        async with self._lock:
             self._disabled[model_id] = date.today()
             self._429_count.pop(model_id, None)
             self._cooldown.pop(model_id, None)
             self._switch_next()
             remaining = sum(1 for m in self._models
-                            if self._is_available(m["id"]))
+                            if self._is_available(m))
         logger.warning(
             f"模型 {model_id} 已标记为今日不可用 (原因: {reason}), "
             f"剩余可用: {remaining}/{len(self._models)}"
         )
 
-    def mark_cooldown(self, model_id: str, reason: str = ""):
+    async def mark_cooldown(self, model_id: str, reason: str = ""):
         """将模型标记为短期冷却"""
-        with self._lock:
+        async with self._lock:
             self._cooldown[model_id] = datetime.now() + \
                 timedelta(seconds=_400_COOLDOWN_SECS)
             self._switch_next()
             remaining = sum(1 for m in self._models
-                            if self._is_available(m["id"]))
+                            if self._is_available(m))
         logger.warning(
             f"模型 {model_id} 给予 {_400_COOLDOWN_SECS // 60} 分钟冷却 "
             f"(原因: {reason}), 剩余可用: {remaining}/{len(self._models)}"
         )
 
-    def mark_429(self, model_id: str) -> bool:
+    async def mark_429(self, model_id: str) -> bool:
         """记录 429 限速，返回 True 表示已触发今日禁用"""
-        with self._lock:
+        async with self._lock:
             count = self._429_count.get(model_id, 0) + 1
             self._429_count[model_id] = count
 
@@ -169,7 +116,7 @@ class ModelManager:
 
             self._switch_next()
             remaining = sum(1 for m in self._models
-                            if self._is_available(m["id"]))
+                            if self._is_available(m))
 
             if is_disabled:
                 logger.warning(
@@ -185,13 +132,13 @@ class ModelManager:
                 )
             return is_disabled
 
-    def reset_429(self, model_id: str):
+    async def reset_429(self, model_id: str):
         """模型成功响应后重置 429 计数"""
-        with self._lock:
+        async with self._lock:
             self._429_count.pop(model_id, None)
 
-    def check_quota_headers(self, model_id: str,
-                            resp_headers) -> tuple[bool, bool]:
+    async def check_quota_headers(self, model_id: str,
+                                   resp_headers) -> tuple[bool, bool]:
         """从 ModelScope 响应头解析限额信息，提前禁用额度用尽的模型
 
         比依赖 429 更精准：200 成功响应也能看出还剩多少额度。
@@ -234,7 +181,7 @@ class ModelManager:
                 model_rem = int(model_remaining)
                 model_lim = int(model_limit) if model_limit else 0
                 if model_rem <= 0:
-                    self.mark_quota_exhausted(
+                    await self.mark_quota_exhausted(
                         model_id,
                         remaining=model_rem,
                         limit=model_lim,
@@ -250,7 +197,7 @@ class ModelManager:
                 user_rem = int(user_remaining)
                 user_lim = int(user_limit) if user_limit else 0
                 if user_rem <= 0:
-                    self.mark_all_disabled(
+                    await self.mark_all_disabled(
                         reason=f"用户总配额用尽 ({user_rem}/{user_lim})"
                     )
                     user_exhausted = True
@@ -269,20 +216,20 @@ class ModelManager:
 
         return model_exhausted, user_exhausted
 
-    def mark_quota_exhausted(self, model_id: str, remaining: int = 0,
+    async def mark_quota_exhausted(self, model_id: str, remaining: int = 0,
                              limit: int = 0, reason: str = ""):
         """基于响应头中的剩余额度信息，标记模型额度用尽
 
         和 mark_disabled 的区别：这是在收到成功响应但剩余额度为 0 时触发，
         比等到 429 再处理更提前、更精准。
         """
-        with self._lock:
+        async with self._lock:
             self._disabled[model_id] = date.today()
             self._429_count.pop(model_id, None)
             self._cooldown.pop(model_id, None)
             self._switch_next()
             remaining_cnt = sum(1 for m in self._models
-                                if self._is_available(m["id"]))
+                                if self._is_available(m))
         limit_str = f"/{limit}" if limit else ""
         logger.warning(
             f"模型 {model_id} 额度已用尽 "
@@ -292,12 +239,12 @@ class ModelManager:
             f"原因: {reason}"
         )
 
-    def mark_all_disabled(self, reason: str = ""):
+    async def mark_all_disabled(self, reason: str = ""):
         """用户整体额度用尽时，禁用所有模型"""
-        with self._lock:
+        async with self._lock:
             today = date.today()
             for m in self._models:
-                self._disabled[m["id"]] = today
+                self._disabled[m] = today
             self._429_count.clear()
             self._cooldown.clear()
             self._user_quota_exhausted = True
@@ -307,27 +254,27 @@ class ModelManager:
             f"所有 {len(self._models)} 个模型已禁用，等待次日刷新"
         )
 
-    def is_user_quota_exhausted(self) -> bool:
+    async def is_user_quota_exhausted(self) -> bool:
         """检查用户额度是否已用尽"""
-        with self._lock:
+        async with self._lock:
             return self._user_quota_exhausted
 
     def _switch_next(self):
         """切换到下一个可用模型的索引"""
         for i in range(1, len(self._models)):
             next_idx = (self._current_index + i) % len(self._models)
-            if self._is_available(self._models[next_idx]["id"]):
+            if self._is_available(self._models[next_idx]):
                 self._current_index = next_idx
                 break
 
-    def get_status(self) -> dict:
+    async def get_status(self) -> dict:
         """获取当前模型管理状态"""
-        with self._lock:
+        async with self._lock:
             today = date.today()
             now = datetime.now()
 
             active = [m for m in self._models
-                      if self._is_available(m["id"])]
+                      if self._is_available(m)]
             disabled = [
                 {"id": mid, "disabled_date": d.isoformat()}
                 for mid, d in self._disabled.items() if d >= today
@@ -344,7 +291,7 @@ class ModelManager:
             current = None
             if self._models:
                 current = self._models[self._current_index]
-                if not self._is_available(current["id"]):
+                if not self._is_available(current):
                     current = None
 
             return {
@@ -358,56 +305,19 @@ class ModelManager:
                 "cooldown_list": cooldown_list,
                 "models": [
                     {
-                        **m,
-                        "is_active": self._is_available(m["id"]),
-                        "is_cooldown": m["id"] in self._cooldown
-                        and self._cooldown[m["id"]] > now,
-                        "is_disabled": m["id"] in self._disabled,
+                        "id": m,
+                        "is_active": self._is_available(m),
+                        "is_cooldown": m in self._cooldown and self._cooldown[m] > now,
+                        "is_disabled": m in self._disabled,
                     }
                     for m in self._models
                 ],
             }
 
-    def _save_cache(self):
-        """将模型列表保存到本地缓存"""
-        try:
-            cache_data = {
-                "updated_at": datetime.now().isoformat(),
-                "models": self._models,
-            }
-            self._data_dir.mkdir(parents=True, exist_ok=True)
-            self._cache_file.write_text(
-                json.dumps(cache_data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as e:
-            logger.error(f"保存模型缓存失败: {e}")
-
-    def load_cache(self) -> bool:
-        """从本地缓存加载模型列表"""
-        if not self._cache_file.exists():
-            return False
-        try:
-            data = json.loads(
-                self._cache_file.read_text(encoding="utf-8"))
-            models = data.get("models", [])
-            if models:
-                with self._lock:
-                    self._models = models
-                    self._current_index = 0
-                logger.info(
-                    f"从缓存加载了 {len(models)} 个模型 "
-                    f"(更新于 {data.get('updated_at', 'unknown')})"
-                )
-                return True
-        except Exception as e:
-            logger.error(f"加载模型缓存失败: {e}")
-        return False
-
-    def reset_daily_limits_if_new_day(self) -> bool:
+    async def reset_daily_limits_if_new_day(self) -> bool:
         """每天重置用户额度耗尽状态"""
         today = date.today()
-        with self._lock:
+        async with self._lock:
 
             # 重置用户额度标志（如果已标记且是之前的日期）
             if self._user_quota_exhausted and self._user_quota_exhausted_date != today:

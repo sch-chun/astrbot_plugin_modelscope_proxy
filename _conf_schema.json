@@ -15,26 +15,15 @@
     "type": "string",
     "default": "modelscope-auto"
   },
-  "min_param_b": {
-    "description": "自动筛选时模型参数量下限（B），低于此值的模型将被过滤",
-    "type": "int",
-    "default": 4,
-    "hint": "仅自动模式生效，自定义模式忽略此值"
-  },
-  "custom_model_list": {
-    "description": "自定义模型回退列表（按优先级排序）",
+  "model_list": {
+    "description": "模型回退列表（按优先级排序）",
     "type": "list",
     "default": [],
-    "hint": "留空则自动从 ModelScope 拉取并按参数量排序。示例：[\"Qwen/Qwen3-Coder-480B\", \"Qwen/Qwen3.5-397B\"]"
+    "hint": "示例：[\"Qwen/Qwen3-Coder-480B\", \"Qwen/Qwen3.5-397B\"]。需至少配置一个模型"
   },
   "show_model_tag": {
     "description": "在回复文本头部注入 [模型名] 标识",
     "type": "bool",
     "default": false
-  },
-  "model_refresh_interval": {
-    "description": "模型列表自动刷新间隔（秒）",
-    "type": "int",
-    "default": 86400
   }
 }

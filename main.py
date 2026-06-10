@@ -38,15 +38,21 @@ class ModelScopeProxyPlugin(Star):
         self._proxy_config: Optional[ProxyConfig] = None
         self._fastapi_app: Optional[FastAPI] = None
         self.config: AstrBotConfig = config
-        self._refresh_task: Optional[asyncio.Task] = None
         self._reset_task: Optional[asyncio.Task] = None
         self._stop_tasks: bool = False
+        self._close_http_client = None
 
     async def initialize(self):
         """插件初始化：读取配置 → 初始化模型管理器 → 启动代理服务"""
-        if not self.config.get("modelscope_api_key"):
+        if not self.config["modelscope_api_key"]:
             logger.error("❌ ModelScope API Key 未配置！请在管理面板中设置。")
-            logger.error("   插件将启动但无法正常工作。")
+            logger.error("   代理服务不会启动。请在 AstrBot 管理面板中配置 modelscope_api_key 后重启插件。")
+            return
+        
+        model_list = self.config["model_list"]
+        if not model_list:
+            logger.error("❌ model_list 未配置！请在管理面板中设置至少一个模型 ID。")
+            logger.error("   代理服务不会启动。请在 AstrBot 管理面板中配置 model_list 后重启插件。")
             return
 
         self._proxy_config = ProxyConfig(
@@ -54,30 +60,12 @@ class ModelScopeProxyPlugin(Star):
             base_url="https://api-inference.modelscope.cn/v1",
             proxy_port=int(self.config["proxy_port"]),
             virtual_model_name=self.config["virtual_model_name"],
-            min_param_b=int(self.config["min_param_b"]),
             show_model_tag=bool(self.config["show_model_tag"]),
-            model_refresh_interval=int(self.config["model_refresh_interval"]),
-            custom_model_list=self.config["custom_model_list"],
+            model_list=model_list
         )
 
         # 初始化模型管理器
-        data_dir = Path(__file__).parent / "data"
-        self._model_manager = ModelManager(
-            data_dir=data_dir,
-            min_param_b=self._proxy_config.min_param_b,
-            custom_model_list=self._proxy_config.custom_model_list,
-        )
-
-        # 先尝试从缓存加载，再后台刷新
-        cached = self._model_manager.load_cache()
-        if not cached or self._proxy_config.custom_model_list:
-            await self._model_manager.refresh_models(
-                self._proxy_config.api_key,
-                self._proxy_config.base_url,
-            )
-        else:
-            logger.info("已从缓存加载模型列表，后台异步刷新...")
-            asyncio.create_task(self._delayed_refresh())
+        self._model_manager = ModelManager(model_list)
 
         # 创建 FastAPI 代理应用
         self._fastapi_app = FastAPI(
@@ -89,42 +77,19 @@ class ModelScopeProxyPlugin(Star):
         self._fastapi_app.include_router(proxy_router)
 
         # 在后台线程中启动 uvicorn
-        self._start_uvicorn()
+        if not self._start_uvicorn():
+            return
 
         logger.info(
             f"✅ ModelScope 代理服务已启动 (端口: {self._proxy_config.proxy_port})"
         )
-        logger.info(
-            f"   使用模式: {'自定义列表' if self._proxy_config.custom_model_list else '自动排序'}"
-        )
-        if self._proxy_config.custom_model_list:
+        if self._proxy_config.model_list:
             logger.info(
-                f"   自定义模型: {self._proxy_config.custom_model_list}")
+                f"   模型列表: {self._proxy_config.model_list}")
 
         # 启动异步周期任务
         self._stop_tasks = False
-        self._refresh_task = asyncio.create_task(self._periodic_refresh())
         self._reset_task = asyncio.create_task(self._periodic_reset())
-
-    async def _periodic_refresh(self):
-        """每个 model_refresh_interval 秒刷新一次模型列表"""
-        interval = self.config["model_refresh_interval"]
-        while not self._stop_tasks:
-            try:
-                await asyncio.sleep(interval)
-                if self._stop_tasks:
-                    break
-                logger.info("定时刷新模型列表……")
-                assert self._model_manager is not None, "ModelManager 未初始化"
-                assert self._proxy_config is not None, "ProxyConfig 未初始化"
-                await self._model_manager.refresh_models(
-                    self._proxy_config.api_key,
-                    self._proxy_config.base_url,
-                )
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"定时刷新模型列表失败: {e}")
 
     async def _periodic_reset(self):
         """每天午夜重置用户额度耗尽状态"""
@@ -137,11 +102,11 @@ class ModelScopeProxyPlugin(Star):
             if self._stop_tasks:
                 break
             if self._model_manager:
-                self._model_manager.reset_daily_limits_if_new_day()
+                await self._model_manager.reset_daily_limits_if_new_day()
             logger.info("已重置用户额度耗尽状态")
 
-    def _start_uvicorn(self):
-        """在后台线程中启动 uvicorn 服务"""
+    def _start_uvicorn(self) -> bool:
+        """在后台线程中启动 uvicorn 服务，成功返回 True，失败（如端口被占用）返回 False"""
         assert self._fastapi_app is not None, "FastAPI app 未初始化"
         assert self._proxy_config is not None, "ProxyConfig 未初始化"
 
@@ -151,7 +116,7 @@ class ModelScopeProxyPlugin(Star):
         if not self._is_port_available(port):
             logger.error(f"❌ 端口 {port} 已被占用，请修改配置中的 proxy_port 或释放该端口")
             logger.error(" ModelScope 代理服务启动失败")
-            return
+            return False
         
         config = uvicorn.Config(
             app=self._fastapi_app,
@@ -167,6 +132,7 @@ class ModelScopeProxyPlugin(Star):
             name="modelscope-proxy",
         )
         self._server_thread.start()
+        return True
 
     def _is_port_available(self, port: int, host: str = "0.0.0.0") -> bool:
         """检测指定端口是否可用"""
@@ -177,19 +143,6 @@ class ModelScopeProxyPlugin(Star):
         except OSError:
             return False
 
-    async def _delayed_refresh(self):
-        """延迟刷新模型列表（等待插件完全就绪后）"""
-        assert self._proxy_config is not None, "ProxyConfig 未初始化"
-        assert self._model_manager is not None, "ModelManager 未初始化"
-        await asyncio.sleep(5)
-        try:
-            await self._model_manager.refresh_models(
-                self._proxy_config.api_key,
-                self._proxy_config.base_url,
-            )
-        except Exception as e:
-            logger.error(f"后台刷新模型列表失败: {e}")
-
     async def terminate(self):
         """插件卸载时优雅关闭服务"""
         logger.info("正在关闭 ModelScope 代理服务...")
@@ -197,7 +150,7 @@ class ModelScopeProxyPlugin(Star):
         self._stop_tasks = True
 
         # 取消任务并等待它们完成
-        for task in [self._refresh_task, self._reset_task]:
+        for task in [self._reset_task]:
             if task and not task.done():
                 task.cancel()
                 try:

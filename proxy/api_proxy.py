@@ -8,6 +8,7 @@ import json
 import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
+import asyncio
 
 from typing import Optional
 
@@ -25,14 +26,17 @@ class RetryableError(Exception):
 _http_client: Optional[httpx.AsyncClient] = None  # 全局 HTTP 客户端实例
 
 
-def get_http_client() -> httpx.AsyncClient:
+_client_lock = asyncio.Lock()  # 保护 HTTP 客户端实例的锁
+async def get_http_client() -> httpx.AsyncClient:
     """获取全局 HTTP 客户端实例，确保连接池复用"""
     global _http_client
     if _http_client is None:
-        _http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(120.0, connect=30.0),
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
-        )
+        async with _client_lock:
+            if _http_client is None:
+                _http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(120.0, connect=30.0),
+                    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+                )
     return _http_client
 
 
@@ -56,11 +60,11 @@ def create_proxy_router(config, model_manager):
 
     async def _proxy_non_stream(url, headers, body, model_id, show_tag):
         """非流式转发"""
-        client = get_http_client()
+        client = await get_http_client()
         resp = await client.post(url, headers=headers, json=body)
 
         # ── 限额检测（在任何状态码处理前先读取响应头）──
-        model_exhausted, user_exhausted = model_manager.check_quota_headers(
+        model_exhausted, user_exhausted = await model_manager.check_quota_headers(
             model_id, resp.headers
         )
 
@@ -90,7 +94,7 @@ def create_proxy_router(config, model_manager):
                         }
                     },
                 )
-            model_manager.mark_disabled(model_id, error_msg)
+            await model_manager.mark_disabled(model_id, error_msg)
             raise RetryableError("Model disabled due to error")
 
         if resp.status_code == 400:
@@ -107,7 +111,7 @@ def create_proxy_router(config, model_manager):
                         }
                     },
                 )
-            model_manager.mark_cooldown(model_id, error_msg)
+            await model_manager.mark_cooldown(model_id, error_msg)
             raise RetryableError("Model on cooldown")
 
         if resp.status_code == 429:
@@ -117,7 +121,7 @@ def create_proxy_router(config, model_manager):
             if model_exhausted:
                 logger.info(f"模型 {model_id} 额度已用尽（通过响应头），直接禁用")
             else:
-                model_manager.mark_429(model_id)
+                await model_manager.mark_429(model_id)
             if user_exhausted:
                 return JSONResponse(
                     status_code=503,
@@ -150,7 +154,7 @@ def create_proxy_router(config, model_manager):
         else:
             resp_content = resp.content
 
-        model_manager.reset_429(model_id)
+        await model_manager.reset_429(model_id)
 
         logger.info(
             f"模型 {model_id} 请求成功"
@@ -178,14 +182,14 @@ def create_proxy_router(config, model_manager):
 
     async def _proxy_stream(url, headers, body, model_id, show_tag):
         """流式转发"""
-        client = get_http_client()
+        client = await get_http_client()
         req = None
         try:
             req = client.stream("POST", url, headers=headers, json=body)
             resp = await req.__aenter__()
 
             # 限额检测（在流式数据开始前检查响应头）
-            model_exhausted, user_exhausted = model_manager.check_quota_headers(
+            model_exhausted, user_exhausted = await model_manager.check_quota_headers(
                 model_id, resp.headers
             )
 
@@ -205,7 +209,7 @@ def create_proxy_router(config, model_manager):
                             }
                         },
                     )
-                model_manager.mark_disabled(model_id, error_msg)
+                await model_manager.mark_disabled(model_id, error_msg)
                 raise RetryableError("Model disabled due to error")
 
             if resp.status_code == 400:
@@ -224,7 +228,7 @@ def create_proxy_router(config, model_manager):
                             }
                         },
                     )
-                model_manager.mark_cooldown(model_id, error_msg)
+                await model_manager.mark_cooldown(model_id, error_msg)
                 raise RetryableError("Model on cooldown")
 
             if resp.status_code == 429:
@@ -235,7 +239,7 @@ def create_proxy_router(config, model_manager):
                     logger.info(
                         f"模型 {model_id} 额度已用尽（通过响应头），直接禁用")
                 else:
-                    model_manager.mark_429(model_id)
+                    await model_manager.mark_429(model_id)
                 if user_exhausted:
                     return JSONResponse(
                         status_code=503,
@@ -281,7 +285,7 @@ def create_proxy_router(config, model_manager):
                 finally:
                     await req.__aexit__(None, None, None)
 
-            model_manager.reset_429(model_id)
+            await model_manager.reset_429(model_id)
             return StreamingResponse(
                 stream_generator(),
                 status_code=resp.status_code,
@@ -330,7 +334,7 @@ def create_proxy_router(config, model_manager):
         """OpenAI 兼容的 chat completions 端点"""
 
         # 如果用户额度已用尽，直接返回 503，不再尝试任何模型
-        if model_manager.is_user_quota_exhausted():
+        if await model_manager.is_user_quota_exhausted():
             return JSONResponse(
                 status_code=503,
                 content={
@@ -367,23 +371,23 @@ def create_proxy_router(config, model_manager):
         for retry_count in range(MAX_RETRIES):
             
             # 每次循环重新获取当前可用模型（可能会因前一次失败而切换）
-            model = model_manager.get_current_model()
+            model =  await model_manager.get_current_model()
             if model is None:
                 logger.error("当前无可用模型")
                 break  # 退出循环，最终返回503
 
             original_model = body.get("model", "")
-            body["model"] = model["id"]
-            logger.info(f"[重试={retry_count}] 转发: model={model['id']} ({model['param_b']}B), 原始model={original_model}")
+            body["model"] = model
+            logger.info(f"[重试={retry_count}] 转发: model={model}, 原始model={original_model}")
 
             try:
                 if is_stream:
                     response = await _proxy_stream(
-                        upstream_url, headers, body, model["id"], show_tag
+                        upstream_url, headers, body, model, show_tag
                     )
                 else:
                     response = await _proxy_non_stream(
-                        upstream_url, headers, body, model["id"], show_tag
+                        upstream_url, headers, body, model, show_tag
                     )
                 # 如果成功，直接返回响应
                 return response
@@ -392,8 +396,8 @@ def create_proxy_router(config, model_manager):
                 continue
             except Exception as e:
                 # 意外异常，记录并尝试下一个模型
-                logger.error(f"模型 {model['id']} 请求发生未知异常: {e}", exc_info=True)
-                model_manager.mark_disabled(model["id"], f"未知异常: {e}")
+                logger.error(f"模型 {model} 请求发生未知异常: {e}", exc_info=True)
+                await model_manager.mark_disabled(model, f"未知异常: {e}")
                 continue
 
         # 所有模型都尝试失败
@@ -407,26 +411,22 @@ def create_proxy_router(config, model_manager):
 
     @router.get("/v1/models")
     async def proxy_models():
-        """列出可用模型（OpenAI 格式）"""
-        status = model_manager.get_status()
-        model_list = []
-        for m in status["models"]:
-            model_list.append({
-                "id": m["id"],
-                "object": "model",
-                "owned_by": m.get("owned_by", "unknown"),
-                "created": m.get("created", 0),
-                "param_b": m.get("param_b", 0),
-                "is_active": m.get("is_active", True),
-            })
+        """列出对外暴露的模型（OpenAI 格式）"""
         return JSONResponse(content={
-            "object": "list",
-            "data": model_list,
-        })
+        "object": "list",
+        "data": [
+            {
+                "id": config.virtual_model_name,
+                "object": "model",
+                "owned_by": "modelscope-proxy",
+                "created": 0,
+            }
+        ],
+    })
 
     @router.get("/v1/status")
     async def proxy_status():
         """获取模型管理状态"""
-        return JSONResponse(content=model_manager.get_status())
+        return JSONResponse(content=await model_manager.get_status())
 
     return router, close_http_client
