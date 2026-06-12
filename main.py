@@ -17,7 +17,7 @@ from .proxy.config import ProxyConfig
 from .proxy.model_manager import ModelManager
 from .proxy.api_proxy import create_proxy_router
 
-from typing import Optional
+from typing import Optional, Callable
 
 from datetime import datetime, timedelta
 
@@ -39,7 +39,7 @@ class ModelScopeProxyPlugin(Star):
         self.config: AstrBotConfig = config
         self._reset_task: Optional[asyncio.Task] = None
         self._stop_tasks: bool = False
-        self._close_http_client = None
+        self._close_http_client: Optional[Callable] = None
 
     async def initialize(self):
         """插件初始化：读取配置 → 初始化模型管理器 → 启动代理服务"""
