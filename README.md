@@ -17,7 +17,7 @@
 
 ### 1. 安装插件
 
-在 AstrBot 管理面板的「插件市场」中安装，或将本仓库克隆到 `AstrBot/data/plugins/` 目录下。
+在 AstrBot 管理面板的「AstrBot 插件」中通过 GitHub 链接安装，或将本仓库克隆到 `AstrBot/data/plugins/` 目录下。
 
 ### 2. 获取 API Key
 
