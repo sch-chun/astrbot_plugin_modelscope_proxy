@@ -25,5 +25,10 @@
     "description": "在回复文本头部注入 [模型名] 标识",
     "type": "bool",
     "default": false
+  },
+  "log_response": {
+    "description": "将上游响应内容打印到日志（调试用）",
+    "type": "bool",
+    "default": false
   }
 }
