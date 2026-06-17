@@ -60,6 +60,7 @@ class ModelScopeProxyPlugin(Star):
             proxy_port=int(self.config["proxy_port"]),
             virtual_model_name=self.config["virtual_model_name"],
             show_model_tag=bool(self.config["show_model_tag"]),
+            log_response=bool(self.config.get("log_response", False)),
             model_list=model_list
         )
 
@@ -85,6 +86,8 @@ class ModelScopeProxyPlugin(Star):
         if self._proxy_config.model_list:
             logger.info(
                 f"   模型列表: {self._proxy_config.model_list}")
+        if self._proxy_config.log_response:
+            logger.info("   📝 响应日志已开启（调试模式）")
 
         # 启动异步周期任务
         self._stop_tasks = False
