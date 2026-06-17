@@ -12,4 +12,5 @@ class ProxyConfig:
     proxy_port: int = 3473
     virtual_model_name: str = "modelscope-auto"
     show_model_tag: bool = False
+    log_response: bool = False
     model_list: list = field(default_factory=list)
