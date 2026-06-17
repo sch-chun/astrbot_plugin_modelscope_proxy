@@ -58,7 +58,7 @@ def create_proxy_router(config, model_manager):
     def _inject_model_tag(content: str, model_id: str) -> str:
         return f"[{_short_model_name(model_id)}] " + content
 
-    async def _proxy_non_stream(url, headers, body, model_id, show_tag):
+    async def _proxy_non_stream(url, headers, body, model_id, show_tag, log_resp):
         """非流式转发"""
         client = await get_http_client()
         resp = await client.post(url, headers=headers, json=body)
@@ -71,6 +71,8 @@ def create_proxy_router(config, model_manager):
         # 不可重试的错误：直接返回错误响应
         if resp.status_code >= 400 and resp.status_code not in (404, 500, 502, 503, 400, 429):
             logger.error(f"模型 {model_id} 不可重试错误: HTTP {resp.status_code}")
+            if log_resp:
+                logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
             return Response(
                 content=resp.content,
                 status_code=resp.status_code,
@@ -81,6 +83,9 @@ def create_proxy_router(config, model_manager):
         if resp.status_code in (404, 500, 502, 503):
             error_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
             logger.warning(f"模型 {model_id} 不可恢复错误: {error_msg}")
+
+            if log_resp:
+                logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
 
             # 如果用户额度已经用尽，直接返回 503 不再尝试
             if user_exhausted:
@@ -100,6 +105,8 @@ def create_proxy_router(config, model_manager):
         if resp.status_code == 400:
             error_msg = f"HTTP 400: {resp.text[:200]}"
             logger.warning(f"模型 {model_id} 返回 400: {error_msg}")
+            if log_resp:
+                logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
             if user_exhausted:
                 return JSONResponse(
                     status_code=503,
@@ -136,8 +143,6 @@ def create_proxy_router(config, model_manager):
             raise RetryableError("Model rate limited")
 
         # ── 成功响应 ──
-        # 即使响应成功，也要检查限额。如果用户额度已用尽，返回 503
-        # （模型额度用尽则 mark_quota_exhausted 已标记，但本次请求成功仍返回结果）
         if user_exhausted:
             logger.warning(
                 f"模型 {model_id} 请求成功但用户额度已用尽，"
@@ -160,6 +165,24 @@ def create_proxy_router(config, model_manager):
             f"模型 {model_id} 请求成功"
             f"{' (额度已尽，本次为末班车)' if user_exhausted else ''}"
         )
+
+        # 打印响应日志
+        if log_resp:
+            try:
+                resp_text = resp_content.decode("utf-8", errors="replace")
+                # 尝试格式化 JSON 输出
+                try:
+                    resp_obj = json.loads(resp_text)
+                    choices = resp_obj.get("choices", [])
+                    for c in choices:
+                        msg = c.get("message", {})
+                        content = msg.get("content", "")
+                        logger.info(f"[响应日志] 模型={model_id}\n---content---\n{content}\n---end---")
+                except (json.JSONDecodeError, AttributeError):
+                    logger.info(f"[响应日志] 模型={model_id}\n{resp_text[:4000]}")
+            except Exception as e:
+                logger.info(f"[响应日志] 模型={model_id} 解码失败: {e}")
+
         return Response(
             content=resp_content,
             status_code=resp.status_code,
@@ -180,7 +203,7 @@ def create_proxy_router(config, model_manager):
             pass
         return resp_data
 
-    async def _proxy_stream(url, headers, body, model_id, show_tag):
+    async def _proxy_stream(url, headers, body, model_id, show_tag, log_resp):
         """流式转发"""
         client = await get_http_client()
         req = None
@@ -198,6 +221,8 @@ def create_proxy_router(config, model_manager):
                 await req.__aexit__(None, None, None)
                 error_msg = f"HTTP {resp.status_code}: {error_body.decode('utf-8', errors='replace')[:200]}"
                 logger.warning(f"模型 {model_id} 流式错误: {error_msg}")
+                if log_resp:
+                    logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_body.decode('utf-8', errors='replace')[:2000]}")
                 if user_exhausted:
                     return JSONResponse(
                         status_code=503,
@@ -217,6 +242,8 @@ def create_proxy_router(config, model_manager):
                 await req.__aexit__(None, None, None)
                 error_msg = f"HTTP 400: {error_body.decode('utf-8', errors='replace')[:200]}"
                 logger.warning(f"模型 {model_id} 流式 400: {error_msg}")
+                if log_resp:
+                    logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_body.decode('utf-8', errors='replace')[:2000]}")
                 if user_exhausted:
                     return JSONResponse(
                         status_code=503,
@@ -257,6 +284,8 @@ def create_proxy_router(config, model_manager):
                 error_body = await resp.aread()
                 await req.__aexit__(None, None, None)
                 logger.error(f"模型 {model_id} 流式不可重试: HTTP {resp.status_code}")
+                if log_resp:
+                    logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_body.decode('utf-8', errors='replace')[:2000]}")
                 return Response(content=error_body, status_code=resp.status_code)
 
             # ── 流式转发成功 ──
@@ -270,8 +299,13 @@ def create_proxy_router(config, model_manager):
 
             async def stream_generator():
                 injected = False
+                collected_text = []  # 收集流式文本用于日志
                 try:
                     async for chunk in resp.aiter_bytes():
+                        # 调试日志：收集 delta content
+                        if log_resp:
+                            _collect_stream_text(chunk, collected_text)
+
                         if show_tag and not injected:
                             injected_chunk = _try_inject_tag_stream_chunk(chunk, model_id)
                             if injected_chunk is not None:
@@ -283,6 +317,12 @@ def create_proxy_router(config, model_manager):
                         else:
                             yield chunk
                 finally:
+                    # 流结束后输出日志
+                    if log_resp and collected_text:
+                        full_text = "".join(collected_text)
+                        logger.info(f"[响应日志] 模型={model_id} (stream)\n---content---\n{full_text}\n---end---")
+                    elif log_resp:
+                        logger.info(f"[响应日志] 模型={model_id} (stream) 未提取到文本内容")
                     await req.__aexit__(None, None, None)
 
             await model_manager.reset_429(model_id)
@@ -300,6 +340,31 @@ def create_proxy_router(config, model_manager):
             if req is not None:
                 await req.__aexit__(None, None, None)
             raise
+
+    def _collect_stream_text(chunk: bytes, collected: list):
+        """从 SSE chunk 中提取 delta.content 并追加到 collected 列表"""
+        try:
+            text = chunk.decode("utf-8")
+            for line in text.split("\n"):
+                line = line.strip()
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                choices = data.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {})
+                content = delta.get("content")
+                if isinstance(content, str) and content:
+                    collected.append(content)
+        except Exception:
+            pass
 
     def _try_inject_tag_stream_chunk(chunk: bytes, model_id: str) -> bytes | None:
         try:
@@ -367,6 +432,7 @@ def create_proxy_router(config, model_manager):
         }
         upstream_url = f"{config.base_url}/chat/completions"
         show_tag = config.show_model_tag
+        log_resp = config.log_response
 
         for retry_count in range(MAX_RETRIES):
             
@@ -383,11 +449,11 @@ def create_proxy_router(config, model_manager):
             try:
                 if is_stream:
                     response = await _proxy_stream(
-                        upstream_url, headers, body, model, show_tag
+                        upstream_url, headers, body, model, show_tag, log_resp
                     )
                 else:
                     response = await _proxy_non_stream(
-                        upstream_url, headers, body, model, show_tag
+                        upstream_url, headers, body, model, show_tag, log_resp
                     )
                 # 如果成功，直接返回响应
                 return response
