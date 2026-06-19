@@ -1,5 +1,5 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.1.0
+ModelScope Auto Proxy — AstrBot 插件版 v0.2.0
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 """
@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
     "modelscope_proxy",
     "sch-chun",
     "ModelScope 免费大模型自动代理插件",
-    "0.1.0",
+    "0.2.0",
 )
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
@@ -70,7 +70,7 @@ class ModelScopeProxyPlugin(Star):
         # 创建 FastAPI 代理应用
         self._fastapi_app = FastAPI(
             title="ModelScope Proxy",
-            version="0.1.0",
+            version="0.2.0",
         )
         proxy_router, self._close_http_client = create_proxy_router(
             self._proxy_config, self._model_manager)
