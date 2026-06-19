@@ -168,26 +168,48 @@ def create_proxy_router(config, model_manager):
 
         # 打印响应日志
         if log_resp:
-            try:
-                resp_text = resp_content.decode("utf-8", errors="replace")
-                # 尝试格式化 JSON 输出
-                try:
-                    resp_obj = json.loads(resp_text)
-                    choices = resp_obj.get("choices", [])
-                    for c in choices:
-                        msg = c.get("message", {})
-                        content = msg.get("content", "")
-                        logger.info(f"[响应日志] 模型={model_id}\n---content---\n{content}\n---end---")
-                except (json.JSONDecodeError, AttributeError):
-                    logger.info(f"[响应日志] 模型={model_id}\n{resp_text[:4000]}")
-            except Exception as e:
-                logger.info(f"[响应日志] 模型={model_id} 解码失败: {e}")
+            _log_non_stream_response(model_id, resp_content)
 
         return Response(
             content=resp_content,
             status_code=resp.status_code,
             headers={"Content-Type": "application/json"},
         )
+
+    def _log_non_stream_response(model_id: str, resp_content: Optional[bytes]):
+        """非流式响应日志输出（独立方法，带完整的 None 安全检查）"""
+        if resp_content is None:
+            logger.info(f"[响应日志] 模型={model_id} resp_content 为 None，跳过日志")
+            return
+        try:
+            resp_text = resp_content.decode("utf-8", errors="replace")
+            if not resp_text.strip():
+                logger.info(f"[响应日志] 模型={model_id} 响应为空")
+                return
+            try:
+                resp_obj = json.loads(resp_text)
+                if not isinstance(resp_obj, dict):
+                    logger.info(f"[响应日志] 模型={model_id}\n{resp_text[:4000]}")
+                    return
+                choices = resp_obj.get("choices") or []
+                if not isinstance(choices, list):
+                    choices = []
+                for c in choices:
+                    if not isinstance(c, dict):
+                        continue
+                    msg = c.get("message") or {}
+                    if not isinstance(msg, dict):
+                        continue
+                    content = msg.get("content", "")
+                    if not isinstance(content, str):
+                        content = str(content)
+                    logger.info(f"[响应日志] 模型={model_id}\n---content---\n{content}\n---end---")
+                if not choices:
+                    logger.info(f"[响应日志] 模型={model_id} 无 choices\n{resp_text[:4000]}")
+            except (json.JSONDecodeError, ValueError):
+                logger.info(f"[响应日志] 模型={model_id}\n{resp_text[:4000]}")
+        except Exception as e:
+            logger.info(f"[响应日志] 模型={model_id} 日志输出异常: {e}")
 
     def _inject_tag_to_response(resp_data: dict, model_id: str) -> dict:
         try:
@@ -354,12 +376,14 @@ def create_proxy_router(config, model_manager):
                     continue
                 try:
                     data = json.loads(data_str)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError):
                     continue
-                choices = data.get("choices", [])
-                if not choices:
+                choices = data.get("choices") or []
+                if not isinstance(choices, list) or not choices:
                     continue
-                delta = choices[0].get("delta", {})
+                delta = choices[0].get("delta") or {}
+                if not isinstance(delta, dict):
+                    continue
                 content = delta.get("content")
                 if isinstance(content, str) and content:
                     collected.append(content)
