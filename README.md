@@ -32,6 +32,8 @@
 
 前往 [ModelScope 我的令牌](https://modelscope.cn/my/myaccesstoken) 创建一个 Access Token。
 
+· 注意: 账号注册后需绑定阿里云账号，并且通过实名认证后才可使用 API-Inference。
+
 ### 3. 配置插件
 
 在 AstrBot 管理面板的「插件配置」中填写（支持多虚拟模型，v0.3.0 起使用新配置格式）：
