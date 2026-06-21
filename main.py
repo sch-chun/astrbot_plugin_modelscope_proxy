@@ -1,5 +1,5 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.3.0
+ModelScope Auto Proxy — AstrBot 插件版 v0.3.1
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。

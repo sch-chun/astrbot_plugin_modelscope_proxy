@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-06-21
+
+### Changed
+- ModelScope 阵发性返回 null choice，原因不明。插件目前遇到该返回后会标记为冷却进行回退处理
+
 ## [0.3.0] - 2026-06-21
 
 ### Added
