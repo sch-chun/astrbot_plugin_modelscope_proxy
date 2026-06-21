@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 class TestModelManager:
     """模型管理器单元测试（无内部模型列表）"""
 
-    def test_init(self):
+    def test_init(self) -> None:
         mm = ModelManager(reserve=0)
         assert mm._disabled == {}
         assert mm._cooldown == {}
@@ -16,24 +16,24 @@ class TestModelManager:
         assert mm._reserve == 0
 
     @pytest.mark.asyncio
-    async def test_is_available_initial(self):
+    async def test_is_available_initial(self) -> None:
         mm = ModelManager()
         assert await mm.is_available("model-A") is True
 
     @pytest.mark.asyncio
-    async def test_is_available_disabled(self):
+    async def test_is_available_disabled(self) -> None:
         mm = ModelManager()
         await mm.mark_disabled("model-A", "test")
         assert await mm.is_available("model-A") is False
 
     @pytest.mark.asyncio
-    async def test_is_available_cooldown(self):
+    async def test_is_available_cooldown(self) -> None:
         mm = ModelManager()
         await mm.mark_cooldown("model-A", "test")
         assert await mm.is_available("model-A") is False  # 冷却中
 
     @pytest.mark.asyncio
-    async def test_get_first_available_returns_available(self):
+    async def test_get_first_available_returns_available(self) -> None:
         mm = ModelManager()
         model_list = ["model-A", "model-B"]
         # 默认全部可用
@@ -41,7 +41,7 @@ class TestModelManager:
         assert result == "model-A"
 
     @pytest.mark.asyncio
-    async def test_get_first_available_skips_disabled(self):
+    async def test_get_first_available_skips_disabled(self) -> None:
         mm = ModelManager()
         await mm.mark_disabled("model-A")
         model_list = ["model-A", "model-B"]
@@ -49,7 +49,7 @@ class TestModelManager:
         assert result == "model-B"
 
     @pytest.mark.asyncio
-    async def test_get_first_available_returns_none_if_user_quota_exhausted(self):
+    async def test_get_first_available_returns_none_if_user_quota_exhausted(self) -> None:
         mm = ModelManager()
         await mm.mark_all_disabled("user quota exhausted")
         model_list = ["model-A"]
@@ -57,21 +57,21 @@ class TestModelManager:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_mark_disabled(self):
+    async def test_mark_disabled(self) -> None:
         mm = ModelManager()
         await mm.mark_disabled("model-A", "reason")
         assert "model-A" in mm._disabled
         assert await mm.is_available("model-A") is False
 
     @pytest.mark.asyncio
-    async def test_mark_cooldown(self):
+    async def test_mark_cooldown(self) -> None:
         mm = ModelManager()
         await mm.mark_cooldown("model-A", "reason")
         assert "model-A" in mm._cooldown
         assert await mm.is_available("model-A") is False
 
     @pytest.mark.asyncio
-    async def test_mark_429_first_time_cooldown(self):
+    async def test_mark_429_first_time_cooldown(self) -> None:
         mm = ModelManager()
         is_disabled = await mm.mark_429("model-A")
         assert is_disabled is False
@@ -79,7 +79,7 @@ class TestModelManager:
         assert mm._429_count["model-A"] == 1
 
     @pytest.mark.asyncio
-    async def test_mark_429_third_time_disables(self):
+    async def test_mark_429_third_time_disables(self) -> None:
         mm = ModelManager()
         await mm.mark_429("model-A")  # 1
         await mm.mark_429("model-A")  # 2
@@ -90,7 +90,7 @@ class TestModelManager:
         assert "model-A" not in mm._429_count
 
     @pytest.mark.asyncio
-    async def test_reset_429_clears_counter(self):
+    async def test_reset_429_clears_counter(self) -> None:
         mm = ModelManager()
         await mm.mark_429("model-A")
         assert mm._429_count["model-A"] == 1
@@ -98,7 +98,7 @@ class TestModelManager:
         assert "model-A" not in mm._429_count
 
     @pytest.mark.asyncio
-    async def test_check_quota_headers_detects_model_exhaustion(self):
+    async def test_check_quota_headers_detects_model_exhaustion(self) -> None:
         mm = ModelManager(reserve=0)
         mock_headers = MagicMock()
         mock_headers.get.side_effect = lambda key, default=None: {
@@ -110,7 +110,7 @@ class TestModelManager:
         assert "model-A" in mm._disabled
 
     @pytest.mark.asyncio
-    async def test_check_quota_headers_detects_user_exhaustion_with_reserve(self):
+    async def test_check_quota_headers_detects_user_exhaustion_with_reserve(self) -> None:
         mm = ModelManager(reserve=5)  # 保留 5 次
         mock_headers = MagicMock()
         mock_headers.get.side_effect = lambda key, default=None: {
@@ -122,7 +122,7 @@ class TestModelManager:
         assert mm._user_quota_exhausted is True
 
     @pytest.mark.asyncio
-    async def test_mark_all_disabled_sets_flag(self):
+    async def test_mark_all_disabled_sets_flag(self) -> None:
         mm = ModelManager()
         await mm.mark_all_disabled("test")
         assert mm._user_quota_exhausted is True
@@ -133,14 +133,14 @@ class TestModelManager:
         assert mm._429_count == {}
 
     @pytest.mark.asyncio
-    async def test_is_user_quota_exhausted(self):
+    async def test_is_user_quota_exhausted(self) -> None:
         mm = ModelManager()
         assert await mm.is_user_quota_exhausted() is False
         await mm.mark_all_disabled("test")
         assert await mm.is_user_quota_exhausted() is True
 
     @pytest.mark.asyncio
-    async def test_reset_daily_limits_clears_expired_and_user_flag(self):
+    async def test_reset_daily_limits_clears_expired_and_user_flag(self) -> None:
         mm = ModelManager()
         # 设置过期的禁用和用户标志
         old_date = date.today() - timedelta(days=1)
@@ -155,7 +155,7 @@ class TestModelManager:
         assert mm._user_quota_exhausted_date is None
 
     @pytest.mark.asyncio
-    async def test_get_status_returns_info(self):
+    async def test_get_status_returns_info(self) -> None:
         mm = ModelManager(reserve=3)
         await mm.mark_disabled("model-A", "test")
         status = await mm.get_status()

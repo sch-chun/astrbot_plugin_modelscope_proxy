@@ -62,14 +62,14 @@ class ModelManager:
             self._429_count.pop(model_id, None)
         return True
 
-    async def mark_disabled(self, model_id: str, reason: str = ""):
+    async def mark_disabled(self, model_id: str, reason: str = "") -> None:
         async with self._lock:
             self._disabled[model_id] = date.today()
             self._429_count.pop(model_id, None)
             self._cooldown.pop(model_id, None)
         logger.warning(f"模型 {model_id} 已标记为今日不可用 (原因: {reason})")
 
-    async def mark_cooldown(self, model_id: str, reason: str = ""):
+    async def mark_cooldown(self, model_id: str, reason: str = "") -> None:
         async with self._lock:
             self._cooldown[model_id] = datetime.now() + timedelta(seconds=_400_COOLDOWN_SECS)
         logger.warning(f"模型 {model_id} 给予 {_400_COOLDOWN_SECS // 60} 分钟冷却 (原因: {reason})")
@@ -90,7 +90,7 @@ class ModelManager:
                 logger.warning(f"模型 {model_id} 遭遇 429 (第 {count}/{_429_THRESHOLD} 次)，冷却 {_429_COOLDOWN_SECS // 60} 分钟")
             return is_disabled
 
-    async def reset_429(self, model_id: str):
+    async def reset_429(self, model_id: str) -> None:
         async with self._lock:
             self._429_count.pop(model_id, None)
 
@@ -151,7 +151,7 @@ class ModelManager:
 
         return model_exhausted, user_exhausted
 
-    async def mark_quota_exhausted(self, model_id: str, remaining: int = 0, limit: int = 0, reason: str = ""):
+    async def mark_quota_exhausted(self, model_id: str, remaining: int = 0, limit: int = 0, reason: str = "") -> None:
         async with self._lock:
             self._disabled[model_id] = date.today()
             self._429_count.pop(model_id, None)
@@ -159,7 +159,7 @@ class ModelManager:
         limit_str = f"/{limit}" if limit else ""
         logger.warning(f"模型 {model_id} 额度已用尽 (剩余: {remaining}{limit_str})，标记为今日不可用，原因: {reason}")
 
-    async def mark_all_disabled(self, reason: str = ""):
+    async def mark_all_disabled(self, reason: str = "") -> None:
         """用户额度耗尽或达到保留阈值，禁用所有模型"""
         async with self._lock:
             self._disabled.clear()

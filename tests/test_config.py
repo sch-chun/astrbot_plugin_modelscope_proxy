@@ -3,13 +3,13 @@ from proxy.config import ProxyConfig, VirtualModelConfig
 
 
 class TestVirtualModelConfig:
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         v = VirtualModelConfig(name="test")
         assert v.name == "test"
         assert v.model_list == []
         assert v.fallback == {}
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
         v = VirtualModelConfig(
             name="custom",
             model_list=["a", "b"],
@@ -21,7 +21,7 @@ class TestVirtualModelConfig:
 
 
 class TestProxyConfig:
-    def test_default_values(self):
+    def test_default_values(self) -> None:
         c = ProxyConfig()
         assert c.api_key == ""
         assert c.base_url == "https://api-inference.modelscope.cn/v1"
@@ -33,7 +33,7 @@ class TestProxyConfig:
         assert c.global_quota_reserve == 0
         assert c.virtual_models == []
 
-    def test_custom_values(self, virtual_model_configs):
+    def test_custom_values(self, virtual_model_configs) -> None:
         v1, v2 = virtual_model_configs
         c = ProxyConfig(
             api_key="custom_key",

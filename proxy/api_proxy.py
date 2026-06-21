@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 import asyncio
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, AsyncGenerator
 
 from astrbot.api import logger
 
@@ -35,7 +35,7 @@ async def get_http_client() -> httpx.AsyncClient:
     return _HTTP_CLIENT
 
 
-async def close_http_client():
+async def close_http_client() -> None:
     """关闭全局 HTTP 客户端实例，安全处理事件循环已关闭的情况"""
     global _HTTP_CLIENT
     if _HTTP_CLIENT is not None:
@@ -60,7 +60,7 @@ async def close_http_client():
             _HTTP_CLIENT = None
 
 
-def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, Any]]):
+def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, Any]]) -> tuple:
     """创建代理路由，注入配置、模型管理器和虚拟模型配置列表"""
     router = APIRouter()
 
@@ -155,7 +155,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             pass
         return None
 
-    def _log_non_stream_response(model_id: str, resp_content: Optional[bytes]):
+    def _log_non_stream_response(model_id: str, resp_content: Optional[bytes]) -> None:
         if resp_content is None:
             logger.info(f"[响应日志] 模型={model_id} resp_content 为 None，跳过日志")
             return
@@ -189,7 +189,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
         except Exception as e:
             logger.info(f"[响应日志] 模型={model_id} 日志输出异常: {e}")
 
-    def _collect_stream_text(chunk: bytes, collected: list):
+    def _collect_stream_text(chunk: bytes, collected: list) -> None:
         try:
             text = chunk.decode("utf-8")
             for line in text.split("\n"):
@@ -225,7 +225,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
         log_resp: bool,
         check_quota: bool = False,
         model_manager_ref = None,
-    ):
+    ) -> Response:
         client = await get_http_client()
 
         if not is_stream:
@@ -365,7 +365,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                 collected_text = []
                 injected = False
 
-                async def stream_generator():
+                async def stream_generator() -> AsyncGenerator:
                     nonlocal injected
                     try:
                         async for chunk in resp.aiter_bytes():
@@ -408,7 +408,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
     # ------------------------------------------------------------
 
     @router.post("/v1/chat/completions")
-    async def proxy_chat_completions(request: Request):
+    async def proxy_chat_completions(request: Request) -> Response:
         # 验证 API Key（如果配置了）
         auth_error = await _verify_api_key(request)
         if auth_error:
@@ -514,7 +514,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                 },
             )
 
-    async def _call_fallback(fallback_conf: dict, body: dict, is_stream: bool, show_tag: bool, log_resp: bool):
+    async def _call_fallback(fallback_conf: dict, body: dict, is_stream: bool, show_tag: bool, log_resp: bool) -> Response:
         api_key = fallback_conf.get("api_key")
         base_url = fallback_conf.get("base_url", "https://api.openai.com/v1")
         model_name = fallback_conf.get("model_name", "gpt-3.5-turbo")
@@ -555,7 +555,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             )
 
     @router.get("/v1/models")
-    async def proxy_models(request: Request):
+    async def proxy_models(request: Request) -> JSONResponse:
         auth_error = await _verify_api_key(request)
         if auth_error:
             return auth_error
@@ -571,7 +571,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
         return JSONResponse(content={"object": "list", "data": data})
 
     @router.get("/v1/status")
-    async def proxy_status(request: Request):
+    async def proxy_status(request: Request) -> JSONResponse:
         auth_error = await _verify_api_key(request)
         if auth_error:
             return auth_error
@@ -588,7 +588,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
         return JSONResponse(content=status)
     
     @router.get("/v1/quota_status")
-    async def quota_status(request: Request):
+    async def quota_status(request: Request) -> JSONResponse:
         # 验证 API Key（如果配置）
         auth_error = await _verify_api_key(request)
         if auth_error:

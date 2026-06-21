@@ -15,7 +15,7 @@ import socket
 
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
-from astrbot.api.web import json_response   # 新增导入
+from astrbot.api.web import json_response, JSONResponse
 
 from .proxy.config import ProxyConfig, VirtualModelConfig
 from .proxy.model_manager import ModelManager
@@ -49,6 +49,7 @@ class ModelScopeProxyPlugin(Star):
 
     async def initialize(self):
         """插件初始化：读取配置 → 初始化模型管理器 → 启动代理服务"""
+
         # 1. 检查 API Key
         api_key = self.config.get("modelscope_api_key", "")
         if not api_key:
@@ -155,7 +156,7 @@ class ModelScopeProxyPlugin(Star):
         self._stop_tasks = False
         self._reset_task = asyncio.create_task(self._periodic_reset())
 
-    async def quota_status_handler(self):
+    async def quota_status_handler(self) -> JSONResponse:
         """返回当前配额状态，供插件监控页面使用"""
         if not self._model_manager or not self._virtual_models:
             return json_response({"error": "服务未初始化"})

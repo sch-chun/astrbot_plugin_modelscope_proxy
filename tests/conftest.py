@@ -8,11 +8,13 @@ from proxy.config import ProxyConfig, VirtualModelConfig
 from proxy.model_manager import ModelManager
 from proxy.api_proxy import create_proxy_router
 
+from typing import AsyncGenerator
+
 
 # ======== 插件级别 fixtures ========
 
 @pytest.fixture
-def mock_astrbot_config():
+def mock_astrbot_config() -> dict:
     """模拟 AstrBot 插件配置（新格式）"""
     return {
         "modelscope_api_key": "test_api_key",
@@ -42,7 +44,7 @@ def mock_astrbot_config():
 
 
 @pytest.fixture
-def mock_context():
+def mock_context() -> AsyncMock:
     """模拟 AstrBot Context"""
     ctx = AsyncMock()
     ctx.send_message = AsyncMock()
@@ -52,7 +54,7 @@ def mock_context():
 
 
 @pytest_asyncio.fixture
-async def plugin_instance(mock_astrbot_config, mock_context):
+async def plugin_instance(mock_astrbot_config, mock_context) -> AsyncGenerator:
     """插件实例 fixture（阻止实际启动 uvicorn）"""
     from ..main import ModelScopeProxyPlugin
     plugin = ModelScopeProxyPlugin(mock_context, mock_astrbot_config)
@@ -68,7 +70,7 @@ async def plugin_instance(mock_astrbot_config, mock_context):
 # ======== 代理服务测试 fixtures ========
 
 @pytest.fixture
-def virtual_model_configs():
+def virtual_model_configs() -> list:
     """虚拟模型配置列表（用于 ProxyConfig）"""
     return [
         VirtualModelConfig(
@@ -89,7 +91,7 @@ def virtual_model_configs():
 
 
 @pytest.fixture
-def test_proxy_config(virtual_model_configs):
+def test_proxy_config(virtual_model_configs) -> ProxyConfig:
     """测试用代理配置（新）"""
     return ProxyConfig(
         api_key="test_key",
@@ -105,15 +107,16 @@ def test_proxy_config(virtual_model_configs):
 
 
 @pytest.fixture
-def test_model_manager():
+def test_model_manager() -> ModelManager:
     """测试用模型管理器（无内部模型列表）"""
     return ModelManager(reserve=0)
 
 
 @pytest_asyncio.fixture
-async def test_app(test_proxy_config, test_model_manager):
+async def test_app(test_proxy_config, test_model_manager) -> AsyncGenerator:
     """FastAPI 测试应用实例（使用新的 create_proxy_router）"""
     app = FastAPI(title="Test ModelScope Proxy")
+
     # 将 VirtualModelConfig 列表转为字典列表
     virtual_models_dict = [v.__dict__ for v in test_proxy_config.virtual_models]
     router, close_client = create_proxy_router(
@@ -125,7 +128,7 @@ async def test_app(test_proxy_config, test_model_manager):
 
 
 @pytest_asyncio.fixture
-async def test_client(test_app):
+async def test_client(test_app) -> AsyncGenerator:
     """HTTPX 异步测试客户端"""
     async with AsyncClient(
         transport=ASGITransport(app=test_app),
