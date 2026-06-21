@@ -17,7 +17,7 @@
     "hint": "建议保持 127.0.0.1 (仅本机访问)，若需外部访问可改为 0.0.0.0"
   },
   "proxy_api_key": {
-    "description": "代理服务自身 API Key (可选)，客户端请求时需在 Authorization 头中提供 Bearer Token",
+    "description": "代理服务自身 API Key (可选)",
     "type": "string",
     "default": "",
     "hint": "留空则不启用验证；设置后可防止未授权访问"
@@ -33,7 +33,7 @@
     "default": false
   },
   "global_quota_reserve": {
-    "description": "全局用户额度保留值（次），当剩余额度 ≤ 该值时停止调用 ModelScope，避免影响其他服务",
+    "description": "全局用户额度保留值（次）",
     "type": "int",
     "default": 0,
     "hint": "例如设为 10，则剩余额度 ≤10 时本插件将不再发起请求，保留至少 10 次给其他功能"
@@ -56,7 +56,7 @@
             "description": "ModelScope 模型回退列表（按优先级排序）",
             "type": "list",
             "default": [],
-            "hint": "示例：[\"Qwen/Qwen3-Coder-480B\", \"Qwen/Qwen3.5-397B\"]，至少配置一个"
+            "hint": "示例：[\"deepseek-ai/DeepSeek-V4-Flash\", \"deepseek-ai/DeepSeek-V3.2\"]，至少配置一个"
           },
           "fallback": {
             "description": "兜底模型配置（可选，当所有 ModelScope 模型不可用时使用）",
@@ -83,6 +83,48 @@
         }
       }
     },
-    "default": []
+    "default": [
+      {
+        "name": "modelscope-auto",
+        "model_list": [
+          "ZhipuAI/GLM-5.2",
+          "nex-agi/Nex-N2-Pro",
+          "deepseek-ai/DeepSeek-V4-Flash",
+          "stepfun-ai/Step-3.5-Flash",
+          "ZhipuAI/GLM-5.1",
+          "MiniMax/MiniMax-M2.7",
+          "deepseek-ai/DeepSeek-V3.2",
+          "MiniMax/MiniMax-M2.5",
+          "Qwen/Qwen3-235B-A22B-Thinking-2507",
+          "Qwen/Qwen3-235B-A22B"
+        ]
+      },
+      {
+        "name": "modelscope-auto-weak",
+        "model_list": [
+          "Qwen/Qwen3-235B-A22B-Instruct-2507",
+          "ERNIE-4.5-300B-A47B-PT",
+          "Mistral-Large-Instruct-2407",
+          "Qwen/Qwen3-Next-80B-A3B-Thinking",
+          "ZhipuAI/GLM-4.7-Flash",
+          "Qwen/Qwen3-Next-80B-A3B-Instruct",
+          "MiniMax/MiniMax-M1-80k",
+          "Qwen/Qwen3-32B",
+          "Qwen/Qwen3-30B-A3B-Thinking-2507",
+          "Qwen/Qwen3-30B-A3B"
+        ]
+      },
+      {
+        "name": "modelscope-auto-vision",
+        "model_list": [
+          "MiniMax/MiniMax-M3",
+          "stepfun-ai/Step-3.7-Flash",
+          "Qwen/Qwen3.5-397B-A17B",
+          "moonshotai/Kimi-K2.6",
+          "Qwen/Qwen3.5-122B-A10B",
+          "Qwen/Qwen3-VL-235B-A22B-Instruct"
+        ]
+      }
+    ]
   }
 }

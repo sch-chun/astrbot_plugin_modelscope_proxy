@@ -202,20 +202,25 @@ class ModelManager:
             }
 
     async def reset_daily_limits_if_new_day(self) -> bool:
+        """每天重置用户额度耗尽状态，并清空旧的剩余额度统计"""
         today = date.today()
         changed = False
         async with self._lock:
+
+            # 重置用户额度标志
             if self._user_quota_exhausted and self._user_quota_exhausted_date != today:
                 self._user_quota_exhausted = False
                 self._user_quota_exhausted_date = None
                 changed = True
                 logger.info("跨日重置用户额度限制标志")
 
+            # 清理过期的禁用状态
             expired_disabled = [mid for mid, d in self._disabled.items() if d < today]
             for mid in expired_disabled:
                 del self._disabled[mid]
                 changed = True
 
+            # 清理过期的冷却状态
             now = datetime.now()
             expired_cooldown = [mid for mid, until in self._cooldown.items() if until < now]
             for mid in expired_cooldown:
@@ -223,7 +228,18 @@ class ModelManager:
                 self._429_count.pop(mid, None)
                 changed = True
 
+            # 清空旧的剩余额度统计数据
+            if self._model_quota:
+                self._model_quota.clear()
+                changed = True
+                logger.debug("跨日清空模型剩余额度缓存")
+            if self._user_quota is not None or self._user_limit is not None:
+                self._user_quota = None
+                self._user_limit = None
+                changed = True
+                logger.debug("跨日清空用户剩余额度缓存")
+
             if changed:
-                logger.debug("清理过期的禁用/冷却记录完成")
+                logger.debug("清理过期的禁用/冷却记录/额度缓存完成")
         return changed
     
