@@ -15,7 +15,14 @@ import socket
 
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
-from astrbot.api.web import json_response, JSONResponse
+
+# ---------- 兼容导入 ----------
+try:
+    from astrbot.api.web import json_response
+except ImportError:
+    # 旧版 AstrBot 使用 quart
+    from quart import jsonify as json_response
+# -----------------------------
 
 from .proxy.config import ProxyConfig, VirtualModelConfig
 from .proxy.model_manager import ModelManager
@@ -156,7 +163,7 @@ class ModelScopeProxyPlugin(Star):
         self._stop_tasks = False
         self._reset_task = asyncio.create_task(self._periodic_reset())
 
-    async def quota_status_handler(self) -> JSONResponse:
+    async def quota_status_handler(self):
         """返回当前配额状态，供插件监控页面使用"""
         if not self._model_manager or not self._virtual_models:
             return json_response({"error": "服务未初始化"})
