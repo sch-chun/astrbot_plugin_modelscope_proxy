@@ -8,6 +8,7 @@ ModelScope Auto Proxy — AstrBot 插件版 v0.3.1
 import asyncio
 import threading
 import httpx
+import time
 
 import uvicorn
 from fastapi import FastAPI
@@ -271,10 +272,17 @@ class ModelScopeProxyPlugin(Star):
         host = self._proxy_config.proxy_host
         port = self._proxy_config.proxy_port
 
-        if not self._is_port_available(port, host):
-            logger.error(f"❌ 端口 {host}:{port} 已被占用，请修改配置或释放该端口")
-            logger.error("   ModelScope 代理服务启动失败")
-            return False
+        # 重试 5 次，每次等待 0.5 秒
+        for attempt in range(5):
+            if self._is_port_available(port, host):
+                break
+            if attempt < 4:
+                logger.warning(f"端口 {host}:{port} 被占用，等待 0.5 秒后重试 (尝试 {attempt+1}/5)")
+                time.sleep(0.5)
+            else:
+                logger.error(f"❌ 端口 {host}:{port} 已被占用，请修改配置或释放该端口")
+                logger.error("   ModelScope 代理服务启动失败")
+                return False
 
         config = uvicorn.Config(
             app=self._fastapi_app,
@@ -320,6 +328,9 @@ class ModelScopeProxyPlugin(Star):
 
         if self._server_thread and self._server_thread.is_alive():
             self._server_thread.join(timeout=5)
+
+        # 等待端口完全释放
+        await asyncio.sleep(0.5)
 
         if self._close_http_client:
             try:
