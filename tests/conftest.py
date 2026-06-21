@@ -1,17 +1,43 @@
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
+from fastapi import FastAPI
+from httpx import AsyncClient, ASGITransport
 
+from proxy.config import ProxyConfig, VirtualModelConfig
+from proxy.model_manager import ModelManager
+from proxy.api_proxy import create_proxy_router
+
+
+# ======== 插件级别 fixtures ========
 
 @pytest.fixture
-def mock_config():
-    """模拟插件配置"""
+def mock_astrbot_config():
+    """模拟 AstrBot 插件配置（新格式）"""
     return {
         "modelscope_api_key": "test_api_key",
         "proxy_port": 3473,
-        "virtual_model_name": "modelscope-auto",
+        "proxy_host": "127.0.0.1",
+        "proxy_api_key": "",  # 可选的代理验证
         "show_model_tag": True,
-        "model_list": ["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"]
+        "log_response": False,
+        "global_quota_reserve": 0,
+        "virtual_models": [
+            {
+                "name": "test-model-1",
+                "model_list": ["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],
+                "fallback": {}
+            },
+            {
+                "name": "test-model-2",
+                "model_list": ["Qwen/Qwen3-393B"],
+                "fallback": {
+                    "api_key": "fallback_key",
+                    "base_url": "https://fallback.api.com/v1",
+                    "model_name": "gpt-3.5-turbo"
+                }
+            }
+        ]
     }
 
 
@@ -20,65 +46,87 @@ def mock_context():
     """模拟 AstrBot Context"""
     ctx = AsyncMock()
     ctx.send_message = AsyncMock()
+    # 模拟 register_web_api
+    ctx.register_web_api = MagicMock()
     return ctx
 
 
 @pytest_asyncio.fixture
-async def plugin_instance(mock_config, mock_context):
-    """插件实例 fixture"""
+async def plugin_instance(mock_astrbot_config, mock_context):
+    """插件实例 fixture（阻止实际启动 uvicorn）"""
     from ..main import ModelScopeProxyPlugin
-    
-    # 创建插件实例前确保不实际启动服务
-    plugin = ModelScopeProxyPlugin(mock_context, mock_config)
-    plugin._start_uvicorn = MagicMock(return_value=True)  # 阻止实际启动
+    plugin = ModelScopeProxyPlugin(mock_context, mock_astrbot_config)
+    # 阻止实际启动 uvicorn
+    plugin._start_uvicorn = MagicMock(return_value=True)
+    # 阻止过滤模型（避免网络请求）
+    plugin._filter_available_models = AsyncMock(return_value=None)
     await plugin.initialize()
     yield plugin
     await plugin.terminate()
 
 
-# ======== 代理测试配置 ========
+# ======== 代理服务测试 fixtures ========
 
-from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
-from proxy.config import ProxyConfig
-from proxy.model_manager import ModelManager
-from proxy.api_proxy import create_proxy_router
+@pytest.fixture
+def virtual_model_configs():
+    """虚拟模型配置列表（用于 ProxyConfig）"""
+    return [
+        VirtualModelConfig(
+            name="test-model-1",
+            model_list=["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],
+            fallback={}
+        ),
+        VirtualModelConfig(
+            name="test-model-2",
+            model_list=["Qwen/Qwen3-393B"],
+            fallback={
+                "api_key": "fallback_key",
+                "base_url": "https://fallback.api.com/v1",
+                "model_name": "gpt-3.5-turbo"
+            }
+        )
+    ]
 
 
 @pytest.fixture
-def test_proxy_config():
-    """测试用代理配置"""
+def test_proxy_config(virtual_model_configs):
+    """测试用代理配置（新）"""
     return ProxyConfig(
         api_key="test_key",
         base_url="https://api-inference.modelscope.cn/v1",
         proxy_port=3473,
-        virtual_model_name="test-model",
-        show_model_tag=True,
-        model_list=["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"]
+        proxy_host="127.0.0.1",
+        proxy_api_key="",  # 可设为 "secret" 测试验证
+        show_model_tag=False,
+        log_response=False,
+        global_quota_reserve=0,
+        virtual_models=virtual_model_configs
     )
 
 
 @pytest.fixture
 def test_model_manager():
-    """测试用模型管理器（带模拟方法）"""
-    manager = ModelManager(["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"])
-    return manager
+    """测试用模型管理器（无内部模型列表）"""
+    return ModelManager(reserve=0)
 
 
 @pytest_asyncio.fixture
 async def test_app(test_proxy_config, test_model_manager):
-    """FastAPI 测试应用实例"""
+    """FastAPI 测试应用实例（使用新的 create_proxy_router）"""
     app = FastAPI(title="Test ModelScope Proxy")
-    router, close_client = create_proxy_router(test_proxy_config, test_model_manager)
+    # 将 VirtualModelConfig 列表转为字典列表
+    virtual_models_dict = [v.__dict__ for v in test_proxy_config.virtual_models]
+    router, close_client = create_proxy_router(
+        test_proxy_config, test_model_manager, virtual_models_dict
+    )
     app.include_router(router)
-    
     yield app
-    
     await close_client()
 
 
 @pytest_asyncio.fixture
 async def test_client(test_app):
+    """HTTPX 异步测试客户端"""
     async with AsyncClient(
         transport=ASGITransport(app=test_app),
         base_url="http://test"

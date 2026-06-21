@@ -1,16 +1,20 @@
 from dataclasses import dataclass, field
+from typing import List, Dict
 
+@dataclass
+class VirtualModelConfig:
+    name: str
+    model_list: List[str] = field(default_factory=list)
+    fallback: Dict[str, str] = field(default_factory=dict)  # {api_key, base_url, model_name}
 
 @dataclass
 class ProxyConfig:
-    """ModelScope 代理配置
-    
-    从 AstrBot 插件配置读取，传递给各核心模块。
-    """
     api_key: str = ""
     base_url: str = "https://api-inference.modelscope.cn/v1"
     proxy_port: int = 3473
-    virtual_model_name: str = "modelscope-auto"
+    proxy_host: str = "127.0.0.1"
+    proxy_api_key: str = ""
     show_model_tag: bool = False
     log_response: bool = False
-    model_list: list = field(default_factory=list)
+    global_quota_reserve: int = 0
+    virtual_models: List[VirtualModelConfig] = field(default_factory=list)

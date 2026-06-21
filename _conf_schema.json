@@ -10,16 +10,17 @@
     "type": "int",
     "default": 3473
   },
-  "virtual_model_name": {
-    "description": "对外暴露的虚拟模型名",
+  "proxy_host": {
+    "description": "代理服务监听地址",
     "type": "string",
-    "default": "modelscope-auto"
+    "default": "127.0.0.1",
+    "hint": "建议保持 127.0.0.1 (仅本机访问)，若需外部访问可改为 0.0.0.0"
   },
-  "model_list": {
-    "description": "模型回退列表（按优先级排序）",
-    "type": "list",
-    "default": [],
-    "hint": "示例：[\"Qwen/Qwen3-Coder-480B\", \"Qwen/Qwen3.5-397B\"]。需至少配置一个模型"
+  "proxy_api_key": {
+    "description": "代理服务自身 API Key (可选)，客户端请求时需在 Authorization 头中提供 Bearer Token",
+    "type": "string",
+    "default": "",
+    "hint": "留空则不启用验证；设置后可防止未授权访问"
   },
   "show_model_tag": {
     "description": "在回复文本头部注入 [模型名] 标识",
@@ -30,5 +31,58 @@
     "description": "将上游响应内容打印到日志（调试用）",
     "type": "bool",
     "default": false
+  },
+  "global_quota_reserve": {
+    "description": "全局用户额度保留值（次），当剩余额度 ≤ 该值时停止调用 ModelScope，避免影响其他服务",
+    "type": "int",
+    "default": 0,
+    "hint": "例如设为 10，则剩余额度 ≤10 时本插件将不再发起请求，保留至少 10 次给其他功能"
+  },
+  "virtual_models": {
+    "description": "虚拟模型配置列表，每个虚拟模型有独立的模型回退列表和可选的兜底模型",
+    "type": "template_list",
+    "templates": {
+      "default": {
+        "name": "虚拟模型配置",
+        "hint": "配置一个对外暴露的模型名称及其回退列表",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "description": "虚拟模型名称（对外暴露）",
+            "type": "string",
+            "default": "modelscope-auto"
+          },
+          "model_list": {
+            "description": "ModelScope 模型回退列表（按优先级排序）",
+            "type": "list",
+            "default": [],
+            "hint": "示例：[\"Qwen/Qwen3-Coder-480B\", \"Qwen/Qwen3.5-397B\"]，至少配置一个"
+          },
+          "fallback": {
+            "description": "兜底模型配置（可选，当所有 ModelScope 模型不可用时使用）",
+            "type": "object",
+            "default": {},
+            "items": {
+              "api_key": {
+                "description": "兜底 API 密钥",
+                "type": "string",
+                "default": ""
+              },
+              "base_url": {
+                "description": "兜底 API 基础 URL（OpenAI 兼容）",
+                "type": "string",
+                "default": "https://api.openai.com/v1"
+              },
+              "model_name": {
+                "description": "兜底模型名称",
+                "type": "string",
+                "default": "gpt-3.5-turbo"
+              }
+            }
+          }
+        }
+      }
+    },
+    "default": []
   }
 }

@@ -1,0 +1,111 @@
+const bridge = window.AstrBotPluginPage;
+let refreshTimer = null;
+
+async function fetchQuotaStatus() {
+  try {
+    const data = await bridge.apiGet('quota_status');
+    return data;
+  } catch (err) {
+    console.error('获取额度状态失败:', err);
+    return null;
+  }
+}
+
+function renderUserQuota(userQuota, userLimit) {
+  const fill = document.getElementById('user-quota-fill');
+  const text = document.getElementById('user-quota-text');
+
+  if (userQuota === undefined || userQuota === null) {
+    text.textContent = '未获取到额度信息';
+    fill.style.width = '0%';
+    return;
+  }
+
+  const limit = userLimit || userQuota; // 若没有limit，用当前值当作100%
+  const percent = limit > 0 ? Math.min(100, (userQuota / limit) * 100) : 0;
+  fill.style.width = percent + '%';
+  // 颜色阈值
+  fill.className = 'bar-fill';
+  if (percent < 20) fill.classList.add('low');
+  else if (percent < 50) fill.classList.add('medium');
+
+  text.textContent = `${userQuota} 次剩余${userLimit ? ` / ${userLimit} 次` : ''}`;
+}
+
+function renderVirtualModels(virtualModels) {
+  const container = document.getElementById('virtual-models');
+  if (!virtualModels || virtualModels.length === 0) {
+    container.innerHTML = '<p>暂无虚拟模型配置</p>';
+    return;
+  }
+
+  let html = '';
+  for (const v of virtualModels) {
+    const fallbackLabel = v.has_fallback ? '🔁 有兜底' : '无兜底';
+    html += `<div class="virtual-model-section">
+      <div class="virtual-name">
+        <span>${v.name}</span>
+        <span class="fallback-badge">${fallbackLabel}</span>
+      </div>
+      <div class="model-grid">`;
+
+    if (v.models.length === 0) {
+      html += `<p style="grid-column:1/-1; color:#888;">该虚拟模型下无配置模型</p>`;
+    } else {
+      for (const m of v.models) {
+        const statusClass = m.is_disabled ? 'disabled' : (m.is_cooldown ? 'cooldown' : 'available');
+        const statusText = m.is_disabled ? '已禁用' : (m.is_cooldown ? '冷却中' : '可用');
+        const quotaText = m.remaining !== undefined && m.remaining !== null ? `${m.remaining} 次剩余` : '未获取';
+        html += `
+          <div class="model-card">
+            <div class="name">${m.id}</div>
+            <div class="status">
+              <span class="dot ${statusClass}"></span>
+              <span>${statusText}</span>
+            </div>
+            <div class="quota">${quotaText}</div>
+          </div>
+        `;
+      }
+    }
+    html += `</div></div>`;
+  }
+  container.innerHTML = html;
+}
+
+async function refreshDashboard() {
+  const data = await fetchQuotaStatus();
+  if (!data) {
+    document.getElementById('user-quota-text').textContent = '加载失败，请重试';
+    return;
+  }
+
+  // 更新用户额度
+  renderUserQuota(data.user_quota, data.user_limit);
+
+  // 更新虚拟模型
+  renderVirtualModels(data.virtual_models);
+
+  // 更新时间
+  const now = new Date();
+  document.getElementById('last-update').textContent = `最后更新: ${now.toLocaleTimeString()}`;
+}
+
+// 初始化
+async function init() {
+  await bridge.ready();
+  await refreshDashboard();
+
+  // 刷新按钮
+  document.getElementById('refresh-btn').addEventListener('click', refreshDashboard);
+
+  // 自动刷新（每30秒）
+  refreshTimer = setInterval(refreshDashboard, 30000);
+
+  // 页面卸载时清理
+  window.addEventListener('beforeunload', () => {
+    if (refreshTimer) clearInterval(refreshTimer);
+  });
+}
+
+init();

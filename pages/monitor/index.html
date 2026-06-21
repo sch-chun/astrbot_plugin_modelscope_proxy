@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ModelScope 监控面板</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>📊 ModelScope 额度监控</h1>
+      <div id="refresh-info">
+        <span id="last-update"></span>
+        <button id="refresh-btn">🔄 刷新</button>
+      </div>
+    </header>
+
+    <section id="user-quota">
+      <h2>用户全局额度</h2>
+      <div class="quota-bar">
+        <div class="bar-bg">
+          <div id="user-quota-fill" class="bar-fill" style="width: 0%;"></div>
+        </div>
+        <span id="user-quota-text">加载中...</span>
+      </div>
+    </section>
+
+    <section id="virtual-models">
+      <!-- 由 JavaScript 动态渲染 -->
+    </section>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
