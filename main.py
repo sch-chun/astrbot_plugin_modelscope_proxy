@@ -1,5 +1,5 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.2.0
+ModelScope Auto Proxy — AstrBot 插件版 v0.3.0
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
     "modelscope_proxy",
     "sch-chun",
     "ModelScope 免费大模型自动代理插件",
-    "0.2.0",
+    "0.3.0",
 )
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
@@ -325,4 +325,3 @@ class ModelScopeProxyPlugin(Star):
                 logger.warning(f"关闭 HTTP 客户端时发生异常: {e}")
 
         logger.info("👋 ModelScope 代理服务已安全关闭")
-        
