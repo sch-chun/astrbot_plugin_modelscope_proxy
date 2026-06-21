@@ -31,6 +31,7 @@
 ### 2. 获取 ModelScope API Key
 
 前往 [ModelScope 我的令牌](https://modelscope.cn/my/myaccesstoken) 创建一个 Access Token。
+· 注意: 账号注册后需绑定阿里云账号，并且通过实名认证后才可使用 API-Inference。
 
 ### 3. 配置插件
 
