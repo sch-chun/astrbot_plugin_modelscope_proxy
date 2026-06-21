@@ -93,7 +93,7 @@ class ModelScopeProxyPlugin(Star):
         self._stop_tasks = False
         self._reset_task = asyncio.create_task(self._periodic_reset())
 
-    async def _periodic_reset(self):
+    async def _periodic_reset(self) -> None:
         """每天午夜重置用户额度耗尽状态"""
         while not self._stop_tasks:
             now = datetime.now()
@@ -145,7 +145,7 @@ class ModelScopeProxyPlugin(Star):
         except OSError:
             return False
 
-    async def terminate(self):
+    async def terminate(self) -> None:
         """插件卸载时优雅关闭服务"""
         logger.info("正在关闭 ModelScope 代理服务...")
 
