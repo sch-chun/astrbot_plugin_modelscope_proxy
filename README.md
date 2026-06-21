@@ -218,4 +218,11 @@ pytest tests/
 
 ## License
 
-MIT
+AGPL-3.0 license
+
+---
+
+## 致谢
+
+原型启发：[ModelScope Auto Proxy](https://github.com/comedy1024/modelscope-auto-proxy)
+平台支持：[AstrBot](https://github.com/AstrBotDevs/AstrBot)
