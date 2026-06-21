@@ -272,6 +272,35 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                     if await model_manager_ref.is_user_quota_exhausted():
                         return _quota_exhausted_response()
                     raise RetryableError("Model rate limited")
+                
+            # ---- 成功响应 ----
+            # 检查响应内容是否有效（choices 不为空）
+            try:
+                resp_data = resp.json()
+                choices = resp_data.get("choices")
+                if not choices or not isinstance(choices, list) or len(choices) == 0:
+                    error_msg = "返回空 choices，视为不可用"
+                    logger.warning(f"模型 {model_id} {error_msg}")
+                    if log_resp:
+                        logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
+                    if check_quota and model_manager_ref:
+                        if await model_manager_ref.is_user_quota_exhausted():
+                            return _quota_exhausted_response()
+                        await model_manager_ref.mark_disabled(model_id, error_msg)
+                    raise RetryableError("Model returned empty choices")
+            except RetryableError:
+                raise
+            except Exception as e:
+                
+                # 解析失败
+                logger.warning(f"模型 {model_id} 响应解析失败: {e}")
+                if log_resp:
+                    logger.info(f"[响应日志] 模型={model_id} 解析失败 body={resp.text[:2000]}")
+                if check_quota and model_manager_ref:
+                    if await model_manager_ref.is_user_quota_exhausted():
+                        return _quota_exhausted_response()
+                    await model_manager_ref.mark_disabled(model_id, f"响应解析失败: {e}")
+                raise RetryableError("Response parse failed")
 
             if check_quota and model_manager_ref:
                 if await model_manager_ref.is_user_quota_exhausted():
