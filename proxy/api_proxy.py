@@ -286,12 +286,12 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                     if check_quota and model_manager_ref:
                         if await model_manager_ref.is_user_quota_exhausted():
                             return _quota_exhausted_response()
-                        await model_manager_ref.mark_disabled(model_id, error_msg)
-                    raise RetryableError("Model returned empty choices")
+                        await model_manager_ref.mark_cooldown(model_id, error_msg)
+                    raise RetryableError("Model on cooldown due to empty choices")
             except RetryableError:
                 raise
             except Exception as e:
-                
+
                 # 解析失败
                 logger.warning(f"模型 {model_id} 响应解析失败: {e}")
                 if log_resp:
@@ -299,7 +299,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                 if check_quota and model_manager_ref:
                     if await model_manager_ref.is_user_quota_exhausted():
                         return _quota_exhausted_response()
-                    await model_manager_ref.mark_disabled(model_id, f"响应解析失败: {e}")
+                    await model_manager_ref.mark_cooldown(model_id, f"响应解析失败: {e}")
                 raise RetryableError("Response parse failed")
 
             if check_quota and model_manager_ref:
