@@ -125,7 +125,8 @@ h2 {
 .model-card .name {
   font-weight: 500;
   font-size: 14px;
-  word-break: break-all;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 .model-card .status {
   font-size: 13px;
