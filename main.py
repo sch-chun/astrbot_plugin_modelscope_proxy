@@ -194,6 +194,7 @@ class ModelScopeProxyPlugin(Star):
             "user_quota": status.get("user_quota"),
             "user_limit": status.get("user_limit"),
             "user_quota_exhausted": status.get("user_quota_exhausted"),
+            "quota_reserve": status.get("quota_reserve"),
             "virtual_models": virtual_info,
         })
 

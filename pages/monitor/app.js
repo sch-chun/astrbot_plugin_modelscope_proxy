@@ -11,25 +11,41 @@ async function fetchQuotaStatus() {
   }
 }
 
-function renderUserQuota(userQuota, userLimit) {
+function renderUserQuota(userQuota, userLimit, quotaReserve) {
   const fill = document.getElementById('user-quota-fill');
+  const reserveFill = document.getElementById('user-quota-reserve-fill'); // 新增元素
   const text = document.getElementById('user-quota-text');
 
-  if (userQuota === undefined || userQuota === null) {
+  if (userQuota === undefined || userQuota === null || userLimit === undefined || userLimit === null) {
     text.textContent = '未获取到额度信息';
     fill.style.width = '0%';
+    if (reserveFill) reserveFill.style.width = '0%';
     return;
   }
 
-  const limit = userLimit || userQuota; // 若没有limit，用当前值当作100%
-  const percent = limit > 0 ? Math.min(100, (userQuota / limit) * 100) : 0;
-  fill.style.width = percent + '%';
-  // 颜色阈值
-  fill.className = 'bar-fill';
-  if (percent < 20) fill.classList.add('low');
-  else if (percent < 50) fill.classList.add('medium');
+  const reserve = quotaReserve || 0;
+  const available = Math.max(0, userQuota - reserve); // 可用部分 = 剩余 - 保留
+  const total = userLimit;
 
-  text.textContent = `${userQuota} 次剩余${userLimit ? ` / ${userLimit} 次` : ''}`;
+  const availablePercent = total > 0 ? Math.min(100, (available / total) * 100) : 0;
+  const reservePercent = total > 0 ? Math.min(100, (reserve / total) * 100) : 0;
+
+  fill.style.width = availablePercent + '%';
+  fill.className = 'bar-fill';
+  if (availablePercent < 20) fill.classList.add('low');
+  else if (availablePercent < 50) fill.classList.add('medium');
+
+  if (reserveFill) {
+    reserveFill.style.width = reservePercent + '%';
+  }
+
+  // 文本： 显示可用次数，如果保留 > 0 才显示保留信息
+  let textStr = `可用 ${available} 次`
+  if (reserve > 0) {
+    textStr += `（保留 ${reserve} 次）`;
+  }
+  textStr += ` / 总额度 ${total} 次`;
+  text.textContent = textStr;
 }
 
 function renderVirtualModels(virtualModels) {
@@ -81,7 +97,7 @@ async function refreshDashboard() {
   }
 
   // 更新用户额度
-  renderUserQuota(data.user_quota, data.user_limit);
+  renderUserQuota(data.user_quota, data.user_limit, data.quota_reserve);
 
   // 更新虚拟模型
   renderVirtualModels(data.virtual_models);
