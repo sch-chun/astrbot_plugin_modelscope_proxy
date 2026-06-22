@@ -156,7 +156,7 @@ response = client.chat.completions.create(
   - 当前剩余额度（来自最后一次响应头）
 - **自动刷新**：每 30 秒自动更新，也可手动刷新
 
-> 注意：额度数据仅在实际请求返回时更新，若长时间无请求，部分模型可能显示“未获取”。
+> 注意：额度数据仅在实际请求返回时更新，若本日从未请求过，总额度及模型额度将显示 “未获取”。
 
 ---
 
@@ -233,4 +233,5 @@ AGPL-3.0 license
 ## 致谢
 
 原型启发：[ModelScope Auto Proxy](https://github.com/comedy1024/modelscope-auto-proxy)
+
 平台支持：[AstrBot](https://github.com/AstrBotDevs/AstrBot)
