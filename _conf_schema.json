@@ -85,6 +85,7 @@
     },
     "default": [
       {
+        "__template_key": "default",
         "name": "modelscope-auto",
         "model_list": [
           "ZhipuAI/GLM-5.2",
@@ -100,6 +101,7 @@
         ]
       },
       {
+        "__template_key": "default",
         "name": "modelscope-auto-weak",
         "model_list": [
           "Qwen/Qwen3-235B-A22B-Instruct-2507",
@@ -115,6 +117,7 @@
         ]
       },
       {
+        "__template_key": "default",
         "name": "modelscope-auto-vision",
         "model_list": [
           "MiniMax/MiniMax-M3",
