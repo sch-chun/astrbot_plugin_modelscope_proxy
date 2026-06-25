@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-06-25
+
+### Changed
+- 请求超时不再禁用全天
+
 ## [0.3.1] - 2026-06-21
 
 ### Changed

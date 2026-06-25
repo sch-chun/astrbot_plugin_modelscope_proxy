@@ -524,8 +524,15 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             except RetryableError:
                 continue
             except Exception as e:
-                logger.error(f"模型 {model} 请求发生未知异常: {e}", exc_info=True)
-                await model_manager.mark_disabled(model, f"未知异常: {e}")
+                
+                # 区分超时类异常（暂时性，冷却即可）和其他未知异常（禁用全天）
+                if isinstance(e, (httpx.ReadTimeout, httpx.TimeoutException)):
+                    error_msg = f"请求超时: {str(e)}"
+                    logger.warning(f"模型 {model} 请求超时，给予冷却（5分钟）")
+                    await model_manager.mark_cooldown(model, error_msg)
+                else:
+                    logger.error(f"模型 {model} 请求发生未知异常: {e}", exc_info=True)
+                    await model_manager.mark_disabled(model, f"未知异常: {e}")
                 continue
 
         if fallback:
