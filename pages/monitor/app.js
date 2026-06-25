@@ -69,8 +69,14 @@ function renderVirtualModels(virtualModels) {
       html += `<p style="grid-column:1/-1; color:#888;">该虚拟模型下无配置模型</p>`;
     } else {
       for (const m of v.models) {
-        const statusClass = m.is_disabled ? 'disabled' : (m.is_cooldown ? 'cooldown' : 'available');
-        const statusText = m.is_disabled ? '已禁用' : (m.is_cooldown ? '冷却中' : '可用');
+        const isExhausted = m.is_disabled && (m.remaining !== undefined && m.remaining !== null && m.remaining <= 0);
+        const statusClass = m.is_disabled 
+            ? (isExhausted ? 'exhausted' : 'disabled')
+            : (m.is_cooldown ? 'cooldown' : 'available');
+
+        let statusText = m.is_disabled 
+            ? (isExhausted ? '已耗尽' : '已禁用')
+            : (m.is_cooldown ? '冷却中' : '可用');
         const quotaText = m.remaining !== undefined && m.remaining !== null ? `${m.remaining} 次剩余` : '未获取';
         html += `
           <div class="model-card">

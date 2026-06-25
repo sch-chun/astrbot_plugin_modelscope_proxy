@@ -7,6 +7,7 @@
   --danger: #ef4444;
   --warning: #f59e0b;
   --success: #22c55e;
+  --exhausted: #9ca3af;
 }
 
 [data-theme="dark"] {
@@ -152,6 +153,7 @@ h2 {
 .dot.available { background: var(--success); }
 .dot.disabled { background: var(--danger); }
 .dot.cooldown { background: var(--warning); }
+.dot.exhausted {background: var(--exhausted);}
 
 .model-card .quota {
   margin-top: 8px;

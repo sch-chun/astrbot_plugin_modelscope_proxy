@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - 请求超时不再禁用全天
+- 模型额度为 0 时将显示 “已耗尽”
 
 ## [0.3.1] - 2026-06-21
 
