@@ -58,6 +58,12 @@
             "default": [],
             "hint": "示例：[\"deepseek-ai/DeepSeek-V4-Flash\", \"deepseek-ai/DeepSeek-V3.2\"]，至少配置一个"
           },
+          "timeout": {
+            "description": "请求超时时间（秒），包括连接和读取超时",
+            "type": "int",
+            "default": 120,
+            "hint": "设置更长的时间，例如 120，以应对大模型生成慢的情况"
+          },
           "fallback": {
             "description": "兜底模型配置（可选，当所有 ModelScope 模型不可用时使用）",
             "type": "object",
@@ -89,32 +95,30 @@
         "name": "modelscope-auto",
         "model_list": [
           "ZhipuAI/GLM-5.2",
-          "nex-agi/Nex-N2-Pro",
-          "deepseek-ai/DeepSeek-V4-Flash",
-          "stepfun-ai/Step-3.5-Flash",
+          "deepseek-ai/DeepSeek-V4-Pro",
           "ZhipuAI/GLM-5.1",
-          "MiniMax/MiniMax-M2.7",
-          "deepseek-ai/DeepSeek-V3.2",
-          "MiniMax/MiniMax-M2.5",
+          "deepseek-ai/DeepSeek-V4-Flash",
           "Qwen/Qwen3-235B-A22B-Thinking-2507",
           "Qwen/Qwen3-235B-A22B"
-        ]
+        ],
+        "timeout": 300
       },
       {
         "__template_key": "default",
         "name": "modelscope-auto-weak",
         "model_list": [
-          "Qwen/Qwen3-235B-A22B-Instruct-2507",
-          "ERNIE-4.5-300B-A47B-PT",
-          "Mistral-Large-Instruct-2407",
-          "Qwen/Qwen3-Next-80B-A3B-Thinking",
-          "ZhipuAI/GLM-4.7-Flash",
-          "Qwen/Qwen3-Next-80B-A3B-Instruct",
+          "ZhipuAI/GLM-5",
+          "MiniMax/MiniMax-M2.7",
+          "deepseek-ai/DeepSeek-V3.2",
+          "MiniMax/MiniMax-M2.5",
+          "moonshotai/Kimi-K2.5",
+          "stepfun-ai/Step-3.5-Flash",
           "MiniMax/MiniMax-M1-80k",
-          "Qwen/Qwen3-32B",
-          "Qwen/Qwen3-30B-A3B-Thinking-2507",
-          "Qwen/Qwen3-30B-A3B"
-        ]
+          "Qwen/Qwen3-235B-A22B-Thinking-2507",
+          "Qwen/Qwen3-235B-A22B",
+          "ZhipuAI/GLM-4.7-Flash"
+        ],
+        "timeout": 120
       },
       {
         "__template_key": "default",
@@ -122,11 +126,14 @@
         "model_list": [
           "MiniMax/MiniMax-M3",
           "stepfun-ai/Step-3.7-Flash",
+          "nex-agi/Nex-N2-Pro",
           "Qwen/Qwen3.5-397B-A17B",
-          "moonshotai/Kimi-K2.6",
           "Qwen/Qwen3.5-122B-A10B",
-          "Qwen/Qwen3-VL-235B-A22B-Instruct"
-        ]
+          "Qwen/Qwen3-VL-235B-A22B-Instruct",
+          "Qwen/Qwen3.5-35B-A3B",
+          "Qwen/Qwen3.5-27B"
+        ],
+        "timeout": 240
       }
     ]
   }

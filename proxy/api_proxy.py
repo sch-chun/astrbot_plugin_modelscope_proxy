@@ -223,6 +223,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
         is_stream: bool,
         show_tag: bool,
         log_resp: bool,
+        timeout: int,
         check_quota: bool = False,
         model_manager_ref = None,
     ) -> Response:
@@ -230,7 +231,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
 
         if not is_stream:
             # ---------- 非流式 ----------
-            resp = await client.post(url, headers=headers, json=body)
+            resp = await client.post(url, headers=headers, json=body, timeout=timeout)
 
             if check_quota and model_manager_ref:
                 await model_manager_ref.check_quota_headers(model_id, resp.headers)
@@ -334,7 +335,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             # ---------- 流式 ----------
             req = None
             try:
-                req = client.stream("POST", url, headers=headers, json=body)
+                req = client.stream("POST", url, headers=headers, json=body, timeout=timeout)
                 resp = await req.__aenter__()
 
                 if check_quota and model_manager_ref:
@@ -482,6 +483,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
 
         model_list = vconf.get("model_list", [])
         fallback = vconf.get("fallback", {})
+        timeout = vconf.get("timeout", 240)
         is_stream = body.get("stream", False)
         show_tag = config.show_model_tag
         log_resp = config.log_response
@@ -489,7 +491,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
         if await model_manager.is_user_quota_exhausted():
             if fallback:
                 logger.info(f"用户额度耗尽，使用虚拟模型 '{requested_model}' 的兜底模型")
-                return await _call_fallback(fallback, body, is_stream, show_tag, log_resp)
+                return await _call_fallback(fallback, body, is_stream, show_tag, log_resp, timeout=timeout)
             else:
                 return _quota_exhausted_response()
 
@@ -517,6 +519,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                     is_stream=is_stream,
                     show_tag=show_tag,
                     log_resp=log_resp,
+                    timeout=timeout,
                     check_quota=True,
                     model_manager_ref=model_manager,
                 )
@@ -537,7 +540,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
 
         if fallback:
             logger.info(f"所有 ModelScope 模型失败，使用虚拟模型 '{requested_model}' 的兜底模型")
-            return await _call_fallback(fallback, body, is_stream, show_tag, log_resp)
+            return await _call_fallback(fallback, body, is_stream, show_tag, log_resp, timeout=timeout)
         else:
             return JSONResponse(
                 status_code=503,
@@ -550,7 +553,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                 },
             )
 
-    async def _call_fallback(fallback_conf: dict, body: dict, is_stream: bool, show_tag: bool, log_resp: bool) -> Response:
+    async def _call_fallback(fallback_conf: dict, body: dict, is_stream: bool, show_tag: bool, log_resp: bool, timeout: int) -> Response:
         api_key = fallback_conf.get("api_key")
         base_url = fallback_conf.get("base_url", "https://api.openai.com/v1")
         model_name = fallback_conf.get("model_name", "gpt-3.5-turbo")
@@ -579,6 +582,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                 is_stream=is_stream,
                 show_tag=show_tag,
                 log_resp=log_resp,
+                timeout=timeout,
                 check_quota=False,
                 model_manager_ref=None,
             )

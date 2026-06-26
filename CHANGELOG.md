@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-06-26
+
+- 添加超时配置
+
 ## [0.3.2] - 2026-06-25
 
 ### Changed

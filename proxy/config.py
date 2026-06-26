@@ -5,7 +5,8 @@ from typing import List, Dict
 class VirtualModelConfig:
     name: str
     model_list: List[str] = field(default_factory=list)
-    fallback: Dict[str, str] = field(default_factory=dict)  # {api_key, base_url, model_name}
+    fallback: Dict[str, str] = field(default_factory=dict)
+    timeout: int = field(default_factory=int)
 
 @dataclass
 class ProxyConfig:

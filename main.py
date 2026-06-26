@@ -1,5 +1,5 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.3.2
+ModelScope Auto Proxy — AstrBot 插件版 v0.3.3
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
@@ -74,18 +74,20 @@ class ModelScopeProxyPlugin(Star):
 
         self._virtual_models = []
         for v in virtual_models_raw:
-            name = v.get("name", "modelscope-auto")
-            model_list = v.get("model_list", [])
+            name = v["name"]
+            model_list = v["model_list"]
             if not model_list:
                 logger.warning(f"虚拟模型 '{name}' 的 model_list 为空，跳过该配置")
                 continue
-            fallback = v.get("fallback", {})
+            fallback = v["fallback"]
             if fallback and not fallback.get("api_key"):
                 logger.warning(f"虚拟模型 '{name}' 的兜底配置缺少 api_key，将不会使用兜底")
+            timeout = int(v["timeout"])
             self._virtual_models.append(VirtualModelConfig(
                 name=name,
                 model_list=model_list,
-                fallback=fallback
+                fallback=fallback,
+                timeout=timeout
             ))
 
         if not self._virtual_models:
