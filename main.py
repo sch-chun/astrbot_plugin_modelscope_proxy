@@ -74,15 +74,15 @@ class ModelScopeProxyPlugin(Star):
 
         self._virtual_models = []
         for v in virtual_models_raw:
-            name = v["name"]
-            model_list = v["model_list"]
+            name = v.get("name", "modelscope-auto")
+            model_list = v.get("model_list", [])
             if not model_list:
                 logger.warning(f"虚拟模型 '{name}' 的 model_list 为空，跳过该配置")
                 continue
-            fallback = v["fallback"]
+            fallback = v.get("fallback", {})
             if fallback and not fallback.get("api_key"):
                 logger.warning(f"虚拟模型 '{name}' 的兜底配置缺少 api_key，将不会使用兜底")
-            timeout = int(v["timeout"])
+            timeout = int(v.get("timeout", 240))
             self._virtual_models.append(VirtualModelConfig(
                 name=name,
                 model_list=model_list,
