@@ -1,5 +1,5 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.3.3
+ModelScope Auto Proxy — AstrBot 插件版 v0.4.0
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
@@ -79,9 +79,10 @@ class ModelScopeProxyPlugin(Star):
             if not model_list:
                 logger.warning(f"虚拟模型 '{name}' 的 model_list 为空，跳过该配置")
                 continue
-            fallback = v.get("fallback", {})
-            if fallback and not fallback.get("api_key"):
-                logger.warning(f"虚拟模型 '{name}' 的兜底配置缺少 api_key，将不会使用兜底")
+            fallback = v.get("fallback", "")
+            if fallback and not isinstance(fallback, str):
+                logger.warning(f"虚拟模型 '{name}' 的 fallback 配置应为字符串 Provider ID，已忽略")
+                fallback = ""
             timeout = int(v.get("timeout", 240))
             self._virtual_models.append(VirtualModelConfig(
                 name=name,
@@ -136,12 +137,47 @@ class ModelScopeProxyPlugin(Star):
         # 7. 创建 FastAPI 代理应用
         self._fastapi_app = FastAPI(
             title="ModelScope Proxy",
-            version="0.2.0",
+            version="0.4.0",
         )
+
+        provider_manager = self.context.provider_manager if hasattr(self.context, "provider_manager") else None
+        if not provider_manager:
+            logger.warning("⚠️ 无法获取 ProviderManager，兜底模型将不可用")
+        elif self._proxy_config:
+
+            from urllib.parse import urlparse
+
+            self_host = self._proxy_config.proxy_host
+            self_port = self._proxy_config.proxy_port
+            for v in self._virtual_models:
+                if not v.fallback:
+                    continue
+                provider = await provider_manager.get_provider_by_id(v.fallback)
+                if not provider:
+                    continue
+                base_url = provider.provider_config.get("api_base", "")
+                if not base_url:
+                    continue
+                try:
+                    parsed = urlparse(base_url)
+                    host = parsed.hostname or ""
+                    port = parsed.port
+
+                    # 检测是否为回环地址，且端口匹配
+                    if port == self_port and host.lower() in ("127.0.0.1", "localhost", "0.0.0.0", "::1"):
+                        logger.warning(
+                            f"虚拟模型 '{v.name}' 的兜底 Provider '{v.fallback}' 指向代理服务自身 (base_url={base_url})，"
+                            "这可能导致级联失败，已禁用该兜底。请配置外部 Provider 作为兜底。"
+                        )
+                        v.fallback = ""
+                except Exception as e:
+                    logger.warning(f"检查兜底 Provider '{v.fallback}' 的 base_url 时发生异常：{e}，跳过检测")
+
         proxy_router, self._close_http_client = create_proxy_router(
             config=self._proxy_config,
             model_manager=self._model_manager,
-            virtual_models=[v.__dict__ for v in self._virtual_models]
+            virtual_models=[v.__dict__ for v in self._virtual_models],
+            provider_manager=provider_manager
         )
         self._fastapi_app.include_router(proxy_router)
 
@@ -156,7 +192,7 @@ class ModelScopeProxyPlugin(Star):
             logger.info("   ⚠️  未启用 API Key 验证，请考虑设置 proxy_api_key 提高安全性")
         logger.info(f"   虚拟模型数量: {len(self._virtual_models)}")
         for v in self._virtual_models:
-            logger.info(f"   - {v.name}: {len(v.model_list)} 个回退模型, fallback: {'有' if v.fallback.get('api_key') else '无'}")
+            logger.info(f"   - {v.name}: {len(v.model_list)} 个回退模型, fallback: {'有' if v.fallback else '无'}")
         if log_response:
             logger.info("   📝 响应日志已开启（调试模式）")
         if global_quota_reserve > 0:
@@ -189,7 +225,7 @@ class ModelScopeProxyPlugin(Star):
             virtual_info.append({
                 "name": v.name,
                 "models": models,
-                "has_fallback": bool(v.fallback.get("api_key")),
+                "has_fallback": bool(v.fallback),
             })
 
         return json_response({

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-06-30
+
+### Added
+- **自引用回退检测**：初始化时自动检测虚拟模型的 `fallback` 是否指向代理服务自身（基于 `api_base` 的主机与端口）。若检测到，则发出警告并自动禁用该兜底配置，避免级联失败和无限递归。
+- **402 错误处理**：ModelScope 返回 402（余额不足/配额用尽）时，插件会将该模型标记为“今日不可用”并自动切换到下一个可用模型，最终触发兜底逻辑（若已配置）。
+
+### Changed
+- **配置 Schema 优化**：将 `fallback` 字段改为选择提供商，便于配置
+
+### Fixed
+- 修复流式响应中 402 状态码未被正确处理的问题。
+- 修复状态端点 `/v1/status` 和 `/v1/quota_status` 中 `has_fallback` 字段的错误判断。
+
+### Deprecated
+- 不建议将虚拟模型作为另一虚拟模型的 `fallback`，此用法已自动检测并禁用，推荐使用外部 Provider 作为兜底。
+
 ## [0.3.3] - 2026-06-26
 
 - 添加超时配置

@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
-from typing import List, Dict
+
 
 @dataclass
 class VirtualModelConfig:
     name: str
-    model_list: List[str] = field(default_factory=list)
-    fallback: Dict[str, str] = field(default_factory=dict)
+    model_list: list[str] = field(default_factory=list)
+    fallback: str = ""
     timeout: int = field(default_factory=int)
 
 @dataclass
@@ -18,4 +18,4 @@ class ProxyConfig:
     show_model_tag: bool = False
     log_response: bool = False
     global_quota_reserve: int = 0
-    virtual_models: List[VirtualModelConfig] = field(default_factory=list)
+    virtual_models: list[VirtualModelConfig] = field(default_factory=list)

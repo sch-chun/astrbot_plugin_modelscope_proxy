@@ -8,9 +8,14 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 import asyncio
-from typing import Optional, List, Dict, Any, AsyncGenerator
+from typing import Optional, Any, AsyncGenerator
+
+from .model_manager import ModelManager
+from .config import ProxyConfig
 
 from astrbot.api import logger
+from astrbot.core.provider.sources.openai_source import ProviderOpenAIOfficial
+from astrbot.core.provider.manager import ProviderManager
 
 
 MAX_RETRIES = 10
@@ -60,7 +65,12 @@ async def close_http_client() -> None:
             _HTTP_CLIENT = None
 
 
-def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, Any]]) -> tuple:
+def create_proxy_router(
+        config: ProxyConfig,
+        model_manager: ModelManager,
+        virtual_models: list[dict[str, Any]],
+        provider_manager: Optional[ProviderManager] = None
+        ) -> tuple:
     """创建代理路由，注入配置、模型管理器和虚拟模型配置列表"""
     router = APIRouter()
 
@@ -236,7 +246,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             if check_quota and model_manager_ref:
                 await model_manager_ref.check_quota_headers(model_id, resp.headers)
 
-            if resp.status_code >= 400 and resp.status_code not in (404, 500, 502, 503, 400, 429):
+            if resp.status_code >= 400 and resp.status_code not in (404, 500, 502, 503, 400, 429, 402):
                 logger.error(f"模型 {model_id} 不可重试错误: HTTP {resp.status_code}")
                 if log_resp:
                     logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
@@ -273,6 +283,16 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                     if await model_manager_ref.is_user_quota_exhausted():
                         return _quota_exhausted_response()
                     raise RetryableError("Model rate limited")
+                
+                if resp.status_code == 402:
+                    error_msg = f"HTTP 402: {resp.text[:200]}"
+                    logger.warning(f"模型 {model_id} 余额不足：{error_msg}")
+                    if log_resp:
+                        logger.info(f"[响应日志] 模型{model_id} status={resp.status_code} body={resp.text[:2000]}")
+                    if await model_manager_ref.is_user_quota_exhausted():
+                        return _quota_exhausted_response()
+                    await model_manager_ref.mark_disabled(model_id, error_msg)
+                    raise RetryableError("Model disabled due to insufficient balance")
                 
             # ---- 成功响应 ----
             # 检查响应内容是否有效（choices 不为空）
@@ -342,7 +362,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                     await model_manager_ref.check_quota_headers(model_id, resp.headers)
 
                 if check_quota and model_manager_ref:
-                    if resp.status_code in (404, 500, 502, 503):
+                    if resp.status_code in (402, 404, 500, 502, 503):
                         error_body = await resp.aread()
                         await req.__aexit__(None, None, None)
                         error_msg = f"HTTP {resp.status_code}: {error_body.decode('utf-8', errors='replace')[:200]}"
@@ -439,6 +459,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
 
     @router.post("/v1/chat/completions")
     async def proxy_chat_completions(request: Request) -> Response:
+        
         # 验证 API Key（如果配置了）
         auth_error = await _verify_api_key(request)
         if auth_error:
@@ -482,7 +503,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             )
 
         model_list = vconf.get("model_list", [])
-        fallback = vconf.get("fallback", {})
+        fallback = vconf.get("fallback", "")
         timeout = vconf.get("timeout", 240)
         is_stream = body.get("stream", False)
         show_tag = config.show_model_tag
@@ -553,32 +574,65 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
                 },
             )
 
-    async def _call_fallback(fallback_conf: dict, body: dict, is_stream: bool, show_tag: bool, log_resp: bool, timeout: int) -> Response:
-        api_key = fallback_conf.get("api_key")
-        base_url = fallback_conf.get("base_url", "https://api.openai.com/v1")
-        model_name = fallback_conf.get("model_name", "gpt-3.5-turbo")
-
-        if not api_key:
-            logger.error("兜底模型缺少 api_key，无法使用")
+    async def _call_fallback(fallback, body: dict, is_stream: bool, show_tag: bool, log_resp: bool, timeout: int) -> Response:
+        """调用兜底模型"""
+        if not provider_manager:
+            logger.error("ProviderManager 未初始化，无法使用兜底模型")
             return JSONResponse(
                 status_code=503,
-                content={"error": {"message": "兜底模型配置不完整", "type": "configuration_error"}},
+                content={"error": {"message": "兜底模型不可用：ProviderManager 缺失", "type": "configuration_error"}}
             )
+                
+        provider = await provider_manager.get_provider_by_id(fallback)
+        if not provider:
+            logger.warning(f"未找到 ID 为 '{fallback}' 的 Provider，兜底不可用")
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"message": f"兜底模型不可用：未找到 ID 为 '{fallback}' 的 Provider", "type": "configuration_error"}}
+            )
+                
+        # 检查是否为 OpenAI 兼容类型
+        if not isinstance(provider, ProviderOpenAIOfficial):
+            logger.warning(f"Provider '{fallback}' 不是 OpenAI 兼容类型，无法作为兜底")
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"message": f"兜底模型不可用：Provider '{fallback}' 不是 OpenAI 兼容类型，无法作为兜底", "type": "configuration_error"}}
+            )
+                
+        # 提取配置
+        base_url = provider.provider_config.get("api_base", "https://api.openai.com/v1")
+        api_key = provider.get_current_key()
+        model = provider.get_model()
 
+        if not api_key:
+            logger.warning(f"Provider '{fallback}' 的 API key 为空，兜底不可用")
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"message": f"兜底模型不可用：Provider '{fallback}' 的 API key 为空", "type": "configuration_error"}}
+            )
+        
+        if not model:
+            logger.warning(f"Provider '{fallback}' 的模型名称为空，兜底不可用")
+            return JSONResponse(
+                status_code=503,
+                content={"error": {"message": "Provider 模型名称为空", "type": "configuration_error"}}
+            )
+        
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+
         body_for_fallback = body.copy()
-        body_for_fallback["model"] = model_name
-        url = f"{base_url}/chat/completions"
+        body_for_fallback["model"] = model
+        url = f"{base_url.rstrip("/")}/chat/completions"
 
         try:
             response = await _call_external_api(
                 url=url,
                 headers=headers,
                 body=body_for_fallback,
-                model_id=model_name,
+                model_id=model,
                 is_stream=is_stream,
                 show_tag=show_tag,
                 log_resp=log_resp,
@@ -621,7 +675,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             {
                 "name": v.get("name"),
                 "model_list": v.get("model_list", []),
-                "has_fallback": bool(v.get("fallback", {}).get("api_key")),
+                "has_fallback": bool(v.get("fallback")),
             }
             for v in virtual_models
         ]
@@ -629,6 +683,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
     
     @router.get("/v1/quota_status")
     async def quota_status(request: Request) -> JSONResponse:
+
         # 验证 API Key（如果配置）
         auth_error = await _verify_api_key(request)
         if auth_error:
@@ -636,11 +691,13 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
 
         # 获取模型管理器状态
         status = await model_manager.get_status()
+
         # 构建每个虚拟模型的详细信息
         virtual_info = []
         for v in virtual_models:
             name = v.get("name")
             model_list = v.get("model_list", [])
+
             # 获取每个模型的剩余额度（从 status 的 model_quota 中取）
             models = []
             for mid in model_list:
@@ -654,7 +711,7 @@ def create_proxy_router(config, model_manager, virtual_models: List[Dict[str, An
             virtual_info.append({
                 "name": name,
                 "models": models,
-                "has_fallback": bool(v.get("fallback", {}).get("api_key")),
+                "has_fallback": bool(v.get("fallback")),
             })
 
         return JSONResponse(content={

@@ -57,12 +57,15 @@
 |------|------|--------|------|
 | `name` | string | `"modelscope-auto"` | 对外暴露的虚拟模型名称 |
 | `model_list` | list | `[]` | ModelScope 模型回退列表，按优先级排序（至少一个） |
-| `fallback` | object | `{}` | 可选的兜底模型配置，当所有 ModelScope 模型不可用时使用 |
+| `fallback` | string | `""` | 可选的兜底模型配置，当所有 ModelScope 模型不可用时使用 |
 
 **`fallback` 字段说明：**
-- `api_key`（string）：兜底 API 的密钥
-- `base_url`（string）：兜底 API 的 base URL（OpenAI 兼容），默认 `"https://api.openai.com/v1"`
-- `model_name`（string）：兜底模型名称，默认 `"gpt-3.5-turbo"`
+
+当所有 ModelScope 模型不可用时，将请求转发至 AstrBot 已配置的 OpenAI 兼容 Provider。
+
+必须为外部 Provider（即 api_base 不为代理服务自身），否则会被自动禁用。
+
+必须为 OpenAI 兼容提供商，否则无法转发。
 
 **配置示例：**
 
@@ -75,16 +78,12 @@
       "Qwen/Qwen3.5-397B",
       "Qwen/Qwen3-393B"
     ],
-    "fallback": {}
+    "fallback": ""
   },
   {
     "name": "qwen-fallback",
     "model_list": ["Qwen/Qwen3-235B-A22B"],
-    "fallback": {
-      "api_key": "sk-your-openai-key",
-      "base_url": "https://api.openai.com/v1",
-      "model_name": "gpt-4o-mini"
-    }
+    "fallback": "openai/gpt-4o"
   }
 ]
 ```

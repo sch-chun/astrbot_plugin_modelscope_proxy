@@ -66,25 +66,10 @@
           },
           "fallback": {
             "description": "兜底模型配置（可选，当所有 ModelScope 模型不可用时使用）",
-            "type": "object",
-            "default": {},
-            "items": {
-              "api_key": {
-                "description": "兜底 API 密钥",
-                "type": "string",
-                "default": ""
-              },
-              "base_url": {
-                "description": "兜底 API 基础 URL（OpenAI 兼容）",
-                "type": "string",
-                "default": "https://api.openai.com/v1"
-              },
-              "model_name": {
-                "description": "兜底模型名称",
-                "type": "string",
-                "default": "gpt-3.5-turbo"
-              }
-            }
+            "type": "string",
+            "_special": "select_provider",
+            "default": "",
+            "hint": "选择一个已配置的模型提供商作为兜底，留空则无兜底"
           }
         }
       }
@@ -97,9 +82,7 @@
           "ZhipuAI/GLM-5.2",
           "deepseek-ai/DeepSeek-V4-Pro",
           "ZhipuAI/GLM-5.1",
-          "deepseek-ai/DeepSeek-V4-Flash",
-          "Qwen/Qwen3-235B-A22B-Thinking-2507",
-          "Qwen/Qwen3-235B-A22B"
+          "deepseek-ai/DeepSeek-V4-Flash"
         ],
         "timeout": 300
       },
