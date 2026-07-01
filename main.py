@@ -21,6 +21,7 @@ from astrbot.api import logger, AstrBotConfig
 try:
     from astrbot.api.web import json_response
 except ImportError:
+
     # 旧版 AstrBot 使用 quart
     from quart import jsonify as json_response
 # -----------------------------
@@ -29,7 +30,9 @@ from .proxy.config import ProxyConfig, VirtualModelConfig
 from .proxy.model_manager import ModelManager
 from .proxy.api_proxy import create_proxy_router
 
-from typing import Optional, Callable, List
+from typing import Optional, Callable, Union
+from fastapi.responses import JSONResponse
+from quart.wrappers import Response
 
 from datetime import datetime, timedelta
 
@@ -48,14 +51,14 @@ class ModelScopeProxyPlugin(Star):
         self._model_manager: Optional[ModelManager] = None
         self._proxy_config: Optional[ProxyConfig] = None
         self._fastapi_app: Optional[FastAPI] = None
-        self._virtual_models: List[VirtualModelConfig] = []
+        self._virtual_models: list[VirtualModelConfig] = []
         self.config: AstrBotConfig = config
         self._reset_task: Optional[asyncio.Task] = None
         self._stop_tasks: bool = False
         self._close_http_client: Optional[Callable] = None
-        self._plugin_name = "modelscope_proxy"   # 插件名常量
+        self._plugin_name: str = "modelscope_proxy"   # 插件名常量
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         """插件初始化：读取配置 → 初始化模型管理器 → 启动代理服务"""
 
         # 1. 检查 API Key
@@ -202,7 +205,7 @@ class ModelScopeProxyPlugin(Star):
         self._stop_tasks = False
         self._reset_task = asyncio.create_task(self._periodic_reset())
 
-    async def quota_status_handler(self):
+    async def quota_status_handler(self) -> Union[Response, JSONResponse]:
         """返回当前配额状态，供插件监控页面使用"""
         if not self._model_manager or not self._virtual_models:
             return json_response({"error": "服务未初始化"})

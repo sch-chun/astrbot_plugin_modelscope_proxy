@@ -45,6 +45,7 @@ async def close_http_client() -> None:
     global _HTTP_CLIENT
     if _HTTP_CLIENT is not None:
         try:
+
             # 检查事件循环是否仍在运行
             loop = asyncio.get_running_loop()
             if loop.is_closed():
@@ -66,11 +67,11 @@ async def close_http_client() -> None:
 
 
 def create_proxy_router(
-        config: ProxyConfig,
-        model_manager: ModelManager,
-        virtual_models: list[dict[str, Any]],
-        provider_manager: Optional[ProviderManager] = None
-        ) -> tuple:
+    config: ProxyConfig,
+    model_manager: ModelManager,
+    virtual_models: list[dict[str, Any]],
+    provider_manager: Optional[ProviderManager] = None
+) -> tuple:
     """创建代理路由，注入配置、模型管理器和虚拟模型配置列表"""
     router = APIRouter()
 
@@ -352,7 +353,9 @@ def create_proxy_router(
             )
 
         else:
+
             # ---------- 流式 ----------
+
             req = None
             try:
                 req = client.stream("POST", url, headers=headers, json=body, timeout=timeout)

@@ -7,17 +7,17 @@ class TestVirtualModelConfig:
         v = VirtualModelConfig(name="test")
         assert v.name == "test"
         assert v.model_list == []
-        assert v.fallback == {}
+        assert v.fallback == ""
 
     def test_custom_values(self) -> None:
         v = VirtualModelConfig(
             name="custom",
             model_list=["a", "b"],
-            fallback={"api_key": "key", "base_url": "url", "model_name": "m"}
+            fallback="fallback-provider"
         )
         assert v.name == "custom"
         assert v.model_list == ["a", "b"]
-        assert v.fallback["api_key"] == "key"
+        assert v.fallback == "fallback-provider"
 
 
 class TestProxyConfig:
@@ -53,4 +53,4 @@ class TestProxyConfig:
         assert c.global_quota_reserve == 10
         assert len(c.virtual_models) == 2
         assert c.virtual_models[0].name == "test-model-1"
-        assert c.virtual_models[1].fallback["api_key"] == "fallback_key"
+        assert c.virtual_models[1].fallback == "fallback-provider"

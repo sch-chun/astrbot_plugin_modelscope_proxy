@@ -8,12 +8,17 @@ from proxy.config import ProxyConfig, VirtualModelConfig
 from proxy.model_manager import ModelManager
 from proxy.api_proxy import create_proxy_router
 
+from typing import AsyncGenerator
+
 
 @pytest.mark.asyncio
 class TestAPIProxy:
     """API 代理集成测试（使用 FastAPI TestClient）"""
-
-    async def test_models_endpoint_returns_all_virtual_models(self, test_client, virtual_model_configs) -> None:
+    async def test_models_endpoint_returns_all_virtual_models(
+            self,
+            test_client: AsyncClient,
+            virtual_model_configs: list[VirtualModelConfig]
+        ) -> None:
         """GET /v1/models 应返回所有虚拟模型名"""
         response = await test_client.get("/v1/models")
         assert response.status_code == 200
@@ -24,12 +29,11 @@ class TestAPIProxy:
         expected_names = [v.name for v in virtual_model_configs]
         assert set(names) == set(expected_names)
 
-    async def test_status_endpoint_returns_manager_status(self, test_client) -> None:
+    async def test_status_endpoint_returns_manager_status(self, test_client: AsyncClient) -> None:
         """GET /v1/status 应返回模型管理状态（不含 total/active/models）"""
         response = await test_client.get("/v1/status")
         assert response.status_code == 200
         data = response.json()
-        # 新结构不再有 total/active/models
         assert "user_quota_exhausted" in data
         assert "disabled_today" in data
         assert "cooldown_count" in data
@@ -40,7 +44,7 @@ class TestAPIProxy:
         assert isinstance(data["virtual_models"], list)
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_success_non_stream(self, mock_get_client, test_client) -> None:
+    async def test_chat_completion_success_non_stream(self, mock_get_client: AsyncMock, test_client: AsyncClient) -> None:
         """POST /v1/chat/completions 非流式成功响应"""
         mock_client = AsyncMock()
         mock_response = AsyncMock()
@@ -65,7 +69,11 @@ class TestAPIProxy:
         assert data["choices"][0]["message"]["content"] == "Hello from ModelScope"
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_model_not_found_returns_404(self, mock_get_client, test_client) -> None:
+    async def test_chat_completion_model_not_found_returns_404(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient
+    ) -> None:
         """请求不存在的虚拟模型应返回 404"""
         request_body = {
             "model": "non-existent-model",
@@ -78,7 +86,12 @@ class TestAPIProxy:
         assert "not_found" in data["error"]["type"]
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_user_quota_exhausted_returns_503(self, mock_get_client, test_client, test_model_manager) -> None:
+    async def test_chat_completion_user_quota_exhausted_returns_503(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_model_manager: ModelManager
+    ) -> None:
         """用户总额度用尽时应返回 503（即使配置了 fallback 也不会调用）"""
         await test_model_manager.mark_all_disabled("测试用户配额用尽")
         request_body = {
@@ -91,7 +104,12 @@ class TestAPIProxy:
         assert "quota_exhausted" in data["error"]["code"]
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_handles_quota_headers(self, mock_get_client, test_client, test_model_manager) -> None:
+    async def test_chat_completion_handles_quota_headers(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_model_manager: ModelManager
+    ) -> None:
         """响应头中的限额信息应被正确处理（模型额度用尽时标记禁用）"""
         mock_client = AsyncMock()
         mock_response = AsyncMock()
@@ -114,15 +132,23 @@ class TestAPIProxy:
         }
         response = await test_client.post("/v1/chat/completions", json=request_body)
         assert response.status_code == 200
+
         # 模型应被标记为禁用（通过 model_manager）
         status = await test_model_manager.get_status()
         disabled_ids = [item["id"] for item in status["disabled_list"]]
+
         # 模型列表中的第一个模型（Qwen/Qwen3-Coder-480B）应被禁用
         assert "Qwen/Qwen3-Coder-480B" in disabled_ids
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_global_quota_reserve_triggers_exhaustion(self, mock_get_client, test_client, test_proxy_config) -> None:
+    async def test_chat_completion_global_quota_reserve_triggers_exhaustion(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_proxy_config: ProxyConfig
+    ) -> None:
         """全局保留值触发提前禁用（剩余额度 ≤ 保留值）"""
+
         # 使用包含 reserve 的配置（在 conftest 中 reserve=0，这里创建新的）
         config_with_reserve = ProxyConfig(
             api_key="test_key",
@@ -163,16 +189,25 @@ class TestAPIProxy:
                 "stream": False
             }
             response = await client.post("/v1/chat/completions", json=request_body)
+
             # 本次请求成功（因为 check_quota_headers 在收到响应后标记禁用）
             assert response.status_code == 200
+
             # 之后用户额度应被标记为耗尽
             assert await mm.is_user_quota_exhausted() is True
 
         await close_client()
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_fallback_when_all_models_disabled(self, mock_get_client, test_client, test_model_manager, test_proxy_config) -> None:
+    async def test_chat_completion_fallback_when_all_models_disabled(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_model_manager: ModelManager,
+        test_proxy_config: ProxyConfig
+    ) -> None:
         """当所有 ModelScope 模型不可用时，应调用兜底模型"""
+
         # 禁用所有 ModelScope 模型（针对 test-model-2 的列表）
         # test-model-2 有 fallback，model_list 只有一个模型
         await test_model_manager.mark_disabled("Qwen/Qwen3-393B", "test")
@@ -198,14 +233,42 @@ class TestAPIProxy:
         assert response.status_code == 200
         data = response.json()
         assert data["choices"][0]["message"]["content"] == "Fallback response"
+
         # 验证调用的是 fallback URL
         mock_client.post.assert_called_once()
         call_url = mock_client.post.call_args[0][0]
         assert "fallback.api.com" in call_url
 
     @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_api_key_auth(self, mock_get_client, test_client, test_proxy_config) -> None:
+    async def test_chat_completion_no_fallback_when_empty(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_model_manager: ModelManager
+    ) -> None:
+        """当虚拟模型没有 fallback 时，所有模型不可用应返回 503"""
+
+        # 禁用所有 ModelScope 模型（针对 test-model-1 的列表）
+        await test_model_manager.mark_disabled("Qwen/Qwen3-Coder-480B", "test")
+        await test_model_manager.mark_disabled("Qwen/Qwen3.5-397B", "test")
+
+        request_body = {
+            "model": "test-model-1",  # 没有 fallback 的虚拟模型
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": False
+        }
+        response = await test_client.post("/v1/chat/completions", json=request_body)
+        assert response.status_code == 503
+
+    @patch("proxy.api_proxy.get_http_client")
+    async def test_chat_completion_api_key_auth(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_proxy_config: ProxyConfig
+    ) -> None:
         """当配置了 proxy_api_key 时，未提供有效 token 应返回 401"""
+
         # 修改配置添加 proxy_api_key
         secure_config = ProxyConfig(
             api_key=test_proxy_config.api_key,
@@ -256,19 +319,55 @@ class TestAPIProxy:
             assert response.status_code == 200
 
         await close_client()
+    
+    @patch("proxy.api_proxy.get_http_client")
+    async def test_chat_completion_402_retries_next_model(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_model_manager: ModelManager
+    ) -> None:
+        """当上游返回 402 时，应尝试下一个模型（如果有）"""
+
+        # 模拟第一个模型返回 402
+        mock_client = AsyncMock()
+        mock_response_402 = AsyncMock()
+        mock_response_402.status_code = 402
+        mock_response_402.text = "Infsufficient balance"
+        mock_response_402.content = b'{"error": {"message": "Infsufficient balance"}}'
+
+        # 模拟第二个模型返回 200
+        mock_response_200 = AsyncMock()
+        mock_response_200.status_code = 200
+        mock_response_200.headers = {}
+        mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Hello from second model"}}]})
+        mock_response_200.content = b'{"choices": [{"message": {"content": "Hello from second model"}}]}'
+
+        # 第一次调用返回 402，第二次调用返回 200
+        mock_client.post.side_effect = [mock_response_402, mock_response_200]
+        mock_get_client.return_value = mock_client
+
+        request_body = {
+            "model": "test-model-1",  # 有两个模型的虚拟模型
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": False
+        }
+        response = await test_client.post("/v1/chat/completions", json=request_body)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["choices"][0]["message"]["content"] == "Hello from second model"
 
 
 @pytest.mark.asyncio
 class TestLogResponse:
-    """针对 log_response 配置的测试（适配新架构）"""
-
+    """针对 log_response 配置的测试"""
     @pytest.mark.parametrize("stream,log_response,expect_log", [
         (False, True, True),
         (False, False, False),
         (True, True, True),
         (True, False, False),
     ])
-    async def test_log_response_behavior(self, stream, log_response, expect_log) -> None:
+    async def test_log_response_behavior(self, stream: bool, log_response: bool, expect_log: bool) -> None:
         """验证 log_response 是否按预期输出日志（流式/非流式）"""
         config = ProxyConfig(
             api_key="test_key",
@@ -307,7 +406,7 @@ class TestLogResponse:
                 b'data: {"choices":[{"delta":{"content":"ModelScope"}}]}\n\n',
                 b'data: [DONE]\n\n',
             ]
-            async def mock_aiter_bytes():
+            async def mock_aiter_bytes() -> AsyncGenerator[bytes, None]:
                 for chunk in sse_chunks:
                     yield chunk
 
@@ -357,7 +456,13 @@ class TestLogResponse:
             show_model_tag=False,
             log_response=True,
             global_quota_reserve=0,
-            virtual_models=[VirtualModelConfig(name="test-model", model_list=["Qwen/Qwen3-Coder-480B"])]
+            virtual_models=[
+                VirtualModelConfig(
+                    name="test-model",
+                    model_list=["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],  # 两个模型
+                    fallback=""
+                )
+            ]
         )
         model_manager = ModelManager(reserve=0)
         app = FastAPI()
@@ -369,16 +474,32 @@ class TestLogResponse:
         app.include_router(router)
 
         invalid_content = b"Not a JSON response"
+        valid_content = b'{"choices": [{"message": {"content": "Valid"}}]}'
+
         mock_client = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.headers = {}
-        mock_response.json = MagicMock(side_effect=json.JSONDecodeError("Invalid", "doc", 0))
-        mock_response.content = invalid_content
-        mock_client.post.return_value = mock_response
+
+        # 第一次响应：无效 JSON
+        mock_response_invalid = AsyncMock()
+        mock_response_invalid.status_code = 200
+        mock_response_invalid.headers = {}
+        mock_response_invalid.json = MagicMock(side_effect=json.JSONDecodeError("Invalid", "doc", 0))
+        mock_response_invalid.content = invalid_content
+        mock_response_invalid.text = "Not a JSON response"
+
+        # 第二次响应：有效 JSON
+        mock_response_valid = AsyncMock()
+        mock_response_valid.status_code = 200
+        mock_response_valid.headers = {}
+        mock_response_valid.json = MagicMock(return_value={"choices": [{"message": {"content": "Valid"}}]})
+        mock_response_valid.content = valid_content
+        mock_response_valid.text = '{"choices": [{"message": {"content": "Valid"}}]}'
+
+        # side_effect 依次返回
+        mock_client.post.side_effect = [mock_response_invalid, mock_response_valid]
 
         with patch('proxy.api_proxy.get_http_client', return_value=mock_client):
-            with patch('astrbot.api.logger.info') as mock_log_info:
+            with patch('astrbot.api.logger.info') as mock_log_info, \
+                patch('astrbot.api.logger.warning') as mock_log_warning:
                 async with AsyncClient(
                     transport=ASGITransport(app=app),
                     base_url="http://test"
@@ -390,9 +511,12 @@ class TestLogResponse:
                     }
                     response = await client.post("/v1/chat/completions", json=request_body)
                     assert response.status_code == 200
+                    data = response.json()
+                    assert data["choices"][0]["message"]["content"] == "Valid"
 
-                calls = [str(call) for call in mock_log_info.call_args_list]
-                assert any("Not a JSON response" in c for c in calls), \
-                    f"预期日志包含原始响应，但未找到，实际调用: {calls}"
+                # 验证日志输出了无效 JSON 内容
+                calls = [str(call) for call in mock_log_info.call_args_list] + \
+                        [str(call) for call in mock_log_warning.call_args_list]
+                assert any("Not a JSON response" in c for c in calls)
 
         await close_client()

@@ -5,12 +5,15 @@
 import asyncio
 from datetime import datetime, date, timedelta
 from typing import Optional, List
+from starlette.datastructures import Headers
 
 from astrbot.api import logger
+
 
 _429_THRESHOLD = 3
 _429_COOLDOWN_SECS = 120
 _400_COOLDOWN_SECS = 300
+
 
 HEADER_MODEL_LIMIT = "modelscope-ratelimit-model-requests-limit"
 HEADER_MODEL_REMAINING = "modelscope-ratelimit-model-requests-remaining"
@@ -29,7 +32,7 @@ class ModelManager:
         self._model_quota: dict[str, int] = {}
         self._user_quota: Optional[int] = None
         self._user_limit: Optional[int] = None
-        self._reserve = reserve
+        self._reserve: int = reserve
 
     async def is_available(self, model_id: str) -> bool:
         async with self._lock:
@@ -94,7 +97,7 @@ class ModelManager:
         async with self._lock:
             self._429_count.pop(model_id, None)
 
-    async def check_quota_headers(self, model_id: str, resp_headers) -> tuple[bool, bool]:
+    async def check_quota_headers(self, model_id: str, resp_headers: Headers) -> tuple[bool, bool]:
         """检查响应头，如果用户剩余额度 ≤ 保留值，则触发全局禁用"""
         try:
             model_remaining = resp_headers.get(HEADER_MODEL_REMAINING)
@@ -204,7 +207,7 @@ class ModelManager:
     async def reset_daily_limits_if_new_day(self) -> bool:
         """每天重置用户额度耗尽状态，并清空旧的剩余额度统计"""
         today = date.today()
-        changed = False
+        changed: bool = False
         async with self._lock:
 
             # 重置用户额度标志

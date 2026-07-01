@@ -36,6 +36,7 @@ class TestModelManager:
     async def test_get_first_available_returns_available(self) -> None:
         mm = ModelManager()
         model_list = ["model-A", "model-B"]
+
         # 默认全部可用
         result = await mm.get_first_available(model_list)
         assert result == "model-A"
@@ -127,6 +128,7 @@ class TestModelManager:
         await mm.mark_all_disabled("test")
         assert mm._user_quota_exhausted is True
         assert mm._user_quota_exhausted_date == date.today()
+        
         # 清空状态字典
         assert mm._disabled == {}
         assert mm._cooldown == {}
@@ -142,6 +144,7 @@ class TestModelManager:
     @pytest.mark.asyncio
     async def test_reset_daily_limits_clears_expired_and_user_flag(self) -> None:
         mm = ModelManager()
+
         # 设置过期的禁用和用户标志
         old_date = date.today() - timedelta(days=1)
         mm._disabled["model-A"] = old_date
