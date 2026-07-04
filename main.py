@@ -1,10 +1,17 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.4.0
+ModelScope Auto Proxy — AstrBot 插件版 v0.4.1
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
 初始化时自动从 ModelScope 获取可用模型列表，过滤无效配置。
 """
+import sys
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+
 import asyncio
 import threading
 import httpx
@@ -26,9 +33,9 @@ except ImportError:
     from quart import jsonify as json_response
 # -----------------------------
 
-from .proxy.config import ProxyConfig, VirtualModelConfig
-from .proxy.model_manager import ModelManager
-from .proxy.api_proxy import create_proxy_router
+from proxy.config import ProxyConfig
+from proxy.model_manager import ModelManager
+from proxy.api_proxy import create_proxy_router
 
 from typing import Optional, Callable, Union
 from fastapi.responses import JSONResponse
@@ -41,7 +48,7 @@ from datetime import datetime, timedelta
     "modelscope_proxy",
     "sch-chun",
     "ModelScope 免费大模型自动代理插件",
-    "0.3.0",
+    "0.4.1",
 )
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
@@ -51,7 +58,7 @@ class ModelScopeProxyPlugin(Star):
         self._model_manager: Optional[ModelManager] = None
         self._proxy_config: Optional[ProxyConfig] = None
         self._fastapi_app: Optional[FastAPI] = None
-        self._virtual_models: list[VirtualModelConfig] = []
+        self._virtual_models: list[dict] = []
         self.config: AstrBotConfig = config
         self._reset_task: Optional[asyncio.Task] = None
         self._stop_tasks: bool = False
@@ -87,19 +94,19 @@ class ModelScopeProxyPlugin(Star):
                 logger.warning(f"虚拟模型 '{name}' 的 fallback 配置应为字符串 Provider ID，已忽略")
                 fallback = ""
             timeout = int(v.get("timeout", 240))
-            self._virtual_models.append(VirtualModelConfig(
-                name=name,
-                model_list=model_list,
-                fallback=fallback,
-                timeout=timeout
-            ))
+            self._virtual_models.append({
+                "name": name,
+                "model_list": model_list,
+                "fallback": fallback,
+                "timeout": timeout
+            })
 
         if not self._virtual_models:
             logger.error("❌ 解析后无有效的虚拟模型配置，代理服务不会启动")
             return
 
         # 过滤不可用的模型（从 ModelScope 获取有效列表）
-        await self._filter_available_models(api_key)
+        await self._filter_available_models(self._virtual_models, api_key)
 
         if not self._virtual_models:
             logger.error("❌ 过滤后无有效的虚拟模型配置（所有模型均不可用），代理服务不会启动")
@@ -153,9 +160,9 @@ class ModelScopeProxyPlugin(Star):
             self_host = self._proxy_config.proxy_host
             self_port = self._proxy_config.proxy_port
             for v in self._virtual_models:
-                if not v.fallback:
+                if not v.get("fallback"):
                     continue
-                provider = await provider_manager.get_provider_by_id(v.fallback)
+                provider = await provider_manager.get_provider_by_id(v["fallback"])
                 if not provider:
                     continue
                 base_url = provider.provider_config.get("api_base", "")
@@ -169,17 +176,17 @@ class ModelScopeProxyPlugin(Star):
                     # 检测是否为回环地址，且端口匹配
                     if port == self_port and host.lower() in ("127.0.0.1", "localhost", "0.0.0.0", "::1"):
                         logger.warning(
-                            f"虚拟模型 '{v.name}' 的兜底 Provider '{v.fallback}' 指向代理服务自身 (base_url={base_url})，"
+                            f"虚拟模型 '{v.get('name')}' 的兜底 Provider '{v.get('fallback')}' 指向代理服务自身 (base_url={base_url})，"
                             "这可能导致级联失败，已禁用该兜底。请配置外部 Provider 作为兜底。"
                         )
-                        v.fallback = ""
+                        v["fallback"] = ""
                 except Exception as e:
-                    logger.warning(f"检查兜底 Provider '{v.fallback}' 的 base_url 时发生异常：{e}，跳过检测")
+                    logger.warning(f"检查兜底 Provider '{v.get('fallback')}' 的 base_url 时发生异常：{e}，跳过检测")
 
         proxy_router, self._close_http_client = create_proxy_router(
             config=self._proxy_config,
             model_manager=self._model_manager,
-            virtual_models=[v.__dict__ for v in self._virtual_models],
+            virtual_models=self._virtual_models,
             provider_manager=provider_manager
         )
         self._fastapi_app.include_router(proxy_router)
@@ -195,7 +202,7 @@ class ModelScopeProxyPlugin(Star):
             logger.info("   ⚠️  未启用 API Key 验证，请考虑设置 proxy_api_key 提高安全性")
         logger.info(f"   虚拟模型数量: {len(self._virtual_models)}")
         for v in self._virtual_models:
-            logger.info(f"   - {v.name}: {len(v.model_list)} 个回退模型, fallback: {'有' if v.fallback else '无'}")
+            logger.info(f"   - {v.get('name')}: {len(v.get('model_list', []))} 个回退模型, fallback: {'有' if v.get('fallback') else '无'}")
         if log_response:
             logger.info("   📝 响应日志已开启（调试模式）")
         if global_quota_reserve > 0:
@@ -217,7 +224,7 @@ class ModelScopeProxyPlugin(Star):
         virtual_info = []
         for v in self._virtual_models:
             models = []
-            for mid in v.model_list:
+            for mid in v.get("model_list", []):
                 quota = status.get("model_quota", {}).get(mid)
                 models.append({
                     "id": mid,
@@ -226,9 +233,9 @@ class ModelScopeProxyPlugin(Star):
                     "is_cooldown": mid in cooldown_set,
                 })
             virtual_info.append({
-                "name": v.name,
+                "name": v.get("name"),
                 "models": models,
-                "has_fallback": bool(v.fallback),
+                "has_fallback": bool(v.get("fallback")),
             })
 
         return json_response({
@@ -239,7 +246,7 @@ class ModelScopeProxyPlugin(Star):
             "virtual_models": virtual_info,
         })
 
-    async def _filter_available_models(self, api_key: str) -> None:
+    async def _filter_available_models(self, virtual_models: list[dict], api_key: str) -> None:
         """从 ModelScope 获取可用模型列表，过滤掉无效的模型配置"""
         base_url = "https://api-inference.modelscope.cn/v1"
         models_url = f"{base_url}/models"
@@ -266,34 +273,48 @@ class ModelScopeProxyPlugin(Star):
 
                 logger.info(f"从 ModelScope 获取到 {len(available)} 个可用模型")
 
-                filtered_virtuals = []
-                for vconf in self._virtual_models:
-                    original_list = vconf.model_list
+                for vconf in virtual_models:
+                    original_list = vconf.get("model_list", [])
                     filtered_list = [m for m in original_list if m in available]
                     removed = [m for m in original_list if m not in available]
                     if removed:
                         logger.warning(
-                            f"虚拟模型 '{vconf.name}' 中以下模型不在 ModelScope 可用列表中，已自动移除: {removed}"
+                            f"虚拟模型 '{vconf.get('name')}' 中以下模型不在 ModelScope 可用列表中，已自动移除: {removed}"
                         )
+                    vconf["model_list"] = filtered_list
                     if not filtered_list:
                         logger.warning(
-                            f"虚拟模型 '{vconf.name}' 的 model_list 过滤后为空，该虚拟模型将被移除"
+                            f"虚拟模型 '{vconf.get('name')}' 的 model_list 过滤后为空，将无法使用，请检查配置或等待模型恢复"
                         )
-                        continue
-                    vconf.model_list = filtered_list
-                    filtered_virtuals.append(vconf)
 
-                self._virtual_models = filtered_virtuals
-                if filtered_virtuals:
-                    logger.info(f"过滤后保留 {len(filtered_virtuals)} 个虚拟模型配置")
+                logger.info("过滤后虚拟模型配置已更新")
 
         except httpx.TimeoutException:
             logger.warning("请求 ModelScope 模型列表超时，跳过过滤，使用原始配置")
         except Exception as e:
             logger.warning(f"请求 ModelScope 模型列表发生异常: {e}，跳过过滤，使用原始配置")
 
+    async def _refresh_models_and_reset(self) -> None:
+        """刷新可用模型列表并重置用户额度耗尽状态"""
+
+        # 1. 刷新可用模型列表
+        if self._proxy_config:
+            api_key = self._proxy_config.api_key
+            if api_key:
+                await self._filter_available_models(self._virtual_models, api_key)
+                logger.info("已刷新可用模型列表")
+            else:
+                logger.warning("API Key 未配置，无法刷新可用模型列表")
+        else:
+            logger.warning("ProxyConfig 未初始化，无法刷新可用模型列表")
+
+        # 2. 重置用户额度耗尽状态
+        if self._model_manager:
+            await self._model_manager.reset_daily_limits_if_new_day()
+            logger.info("已重置用户额度耗尽状态")
+
     async def _periodic_reset(self) -> None:
-        """每天午夜重置用户额度耗尽状态"""
+        """每天午夜重置用户额度耗尽状态，并刷新可用模型列表"""
         while not self._stop_tasks:
             now = datetime.now()
             next_midnight = (now + timedelta(days=1)).replace(
@@ -302,9 +323,8 @@ class ModelScopeProxyPlugin(Star):
             await asyncio.sleep(delay)
             if self._stop_tasks:
                 break
-            if self._model_manager:
-                await self._model_manager.reset_daily_limits_if_new_day()
-            logger.info("已重置用户额度耗尽状态")
+        
+            await self._refresh_models_and_reset()    
 
     def _start_uvicorn(self) -> bool:
         """在后台线程中启动 uvicorn 服务，成功返回 True，失败返回 False"""

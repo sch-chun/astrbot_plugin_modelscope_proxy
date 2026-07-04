@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
-from proxy.config import ProxyConfig, VirtualModelConfig
+from proxy.config import ProxyConfig
 from proxy.model_manager import ModelManager
 from proxy.api_proxy import create_proxy_router
 
@@ -17,7 +17,7 @@ class TestAPIProxy:
     async def test_models_endpoint_returns_all_virtual_models(
             self,
             test_client: AsyncClient,
-            virtual_model_configs: list[VirtualModelConfig]
+            virtual_model_configs: list[dict]
         ) -> None:
         """GET /v1/models 应返回所有虚拟模型名"""
         response = await test_client.get("/v1/models")
@@ -26,7 +26,7 @@ class TestAPIProxy:
         assert data["object"] == "list"
         assert len(data["data"]) == len(virtual_model_configs)
         names = [item["id"] for item in data["data"]]
-        expected_names = [v.name for v in virtual_model_configs]
+        expected_names = [v["name"] for v in virtual_model_configs]
         assert set(names) == set(expected_names)
 
     async def test_status_endpoint_returns_manager_status(self, test_client: AsyncClient) -> None:
@@ -158,14 +158,14 @@ class TestAPIProxy:
             show_model_tag=False,
             log_response=False,
             global_quota_reserve=5,  # 保留 5 次
-            virtual_models=[VirtualModelConfig(name="test-model-1", model_list=["Qwen/Qwen3-Coder-480B"])]
+            virtual_models=[{"name": "test-model-1", "model_list": ["Qwen/Qwen3-Coder-480B"]}]
         )
         mm = ModelManager(reserve=5)
         app = FastAPI()
         router, close_client = create_proxy_router(
             config_with_reserve,
             mm,
-            [v.__dict__ for v in config_with_reserve.virtual_models]
+            config_with_reserve.virtual_models
         )
         app.include_router(router)
 
@@ -286,7 +286,7 @@ class TestAPIProxy:
         router, close_client = create_proxy_router(
             secure_config,
             mm,
-            [v.__dict__ for v in secure_config.virtual_models]
+            secure_config.virtual_models
         )
         app.include_router(router)
 
@@ -377,14 +377,14 @@ class TestLogResponse:
             show_model_tag=False,
             log_response=log_response,
             global_quota_reserve=0,
-            virtual_models=[VirtualModelConfig(name="test-model", model_list=["Qwen/Qwen3-Coder-480B"])]
+            virtual_models=[{"name": "test-model", "model_list": ["Qwen/Qwen3-Coder-480B"]}]
         )
         model_manager = ModelManager(reserve=0)
         app = FastAPI()
         router, close_client = create_proxy_router(
             config,
             model_manager,
-            [v.__dict__ for v in config.virtual_models]
+            config.virtual_models
         )
         app.include_router(router)
 
@@ -457,11 +457,11 @@ class TestLogResponse:
             log_response=True,
             global_quota_reserve=0,
             virtual_models=[
-                VirtualModelConfig(
-                    name="test-model",
-                    model_list=["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],  # 两个模型
-                    fallback=""
-                )
+                {
+                    "name": "test-model",
+                    "model_list": ["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],  # 两个模型
+                    "fallback": ""
+                }
             ]
         )
         model_manager = ModelManager(reserve=0)
@@ -469,7 +469,7 @@ class TestLogResponse:
         router, close_client = create_proxy_router(
             config,
             model_manager,
-            [v.__dict__ for v in config.virtual_models]
+            config.virtual_models
         )
         app.include_router(router)
 

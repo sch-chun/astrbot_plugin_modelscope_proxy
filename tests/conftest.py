@@ -1,10 +1,17 @@
+import sys
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, create_autospec
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
-from proxy.config import ProxyConfig, VirtualModelConfig
+from proxy.config import ProxyConfig
 from proxy.model_manager import ModelManager
 from proxy.api_proxy import create_proxy_router
 
@@ -88,16 +95,16 @@ def mock_provider_manager() -> Optional[AsyncMock]:
 def virtual_model_configs() -> list:
     """虚拟模型配置列表（用于 ProxyConfig）"""
     return [
-        VirtualModelConfig(
-            name="test-model-1",
-            model_list=["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],
-            fallback=""
-        ),
-        VirtualModelConfig(
-            name="test-model-2",
-            model_list=["Qwen/Qwen3-393B"],
-            fallback="fallback-provider"
-        )
+        {
+            "name": "test-model-1",
+            "model_list": ["Qwen/Qwen3-Coder-480B", "Qwen/Qwen3.5-397B"],
+            "fallback": ""
+        },
+        {
+            "name": "test-model-2",
+            "model_list": ["Qwen/Qwen3-393B"],
+            "fallback": "fallback-provider"
+        }
     ]
 
 
@@ -133,7 +140,7 @@ async def test_app(
     app = FastAPI(title="Test ModelScope Proxy")
 
     # 将 VirtualModelConfig 列表转为字典列表
-    virtual_models_dict = [v.__dict__ for v in test_proxy_config.virtual_models]
+    virtual_models_dict = test_proxy_config.virtual_models
     router, close_client = create_proxy_router(
         test_proxy_config, test_model_manager, virtual_models_dict, mock_provider_manager
     )

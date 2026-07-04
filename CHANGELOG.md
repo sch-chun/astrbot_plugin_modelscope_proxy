@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-07-04
+
+### Added
+- 每日午夜同时刷新可用模型列表
+
 ## [0.4.0] - 2026-06-30
 
 ### Added
