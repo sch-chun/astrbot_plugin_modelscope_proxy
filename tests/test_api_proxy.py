@@ -357,6 +357,55 @@ class TestAPIProxy:
         data = response.json()
         assert data["choices"][0]["message"]["content"] == "Hello from second model"
 
+    @patch("proxy.api_proxy.get_http_client")
+    async def test_chat_completion_400_unsupported_provider_disables_model(
+        self,
+        mock_get_client: AsyncMock,
+        test_client: AsyncClient,
+        test_model_manager: ModelManager
+    ) -> None:
+        """当上游返回 400 且消息包含 'has no provider supported' 时，模型应被禁用并尝试下一个"""
+
+        # 准备 mock：第一个模型返回 400 特定错误
+        mock_client = AsyncMock()
+        
+        # 第一个响应：400 + 特定消息
+        error_body = b'{"error":{"message":"Model id : MiniMax/MiniMax-M2.7 , has no provider supported","request_id":"xxx"}}'
+        mock_response_400 = AsyncMock()
+        mock_response_400.status_code = 400
+        mock_response_400.text = error_body.decode()
+        mock_response_400.content = error_body
+        mock_response_400.json = MagicMock(side_effect=json.JSONDecodeError("Not JSON", "doc", 0))  # 不需要解析
+
+        # 第二个响应：200 成功
+        mock_response_200 = AsyncMock()
+        mock_response_200.status_code = 200
+        mock_response_200.headers = {}
+        mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Success from second"}}]})
+        mock_response_200.content = b'{"choices": [{"message": {"content": "Success from second"}}]}'
+
+        mock_client.post.side_effect = [mock_response_400, mock_response_200]
+        mock_get_client.return_value = mock_client
+
+        # 使用 test-model-1（有两个模型：Qwen/Qwen3-Coder-480B 和 Qwen/Qwen3.5-397B）
+        request_body = {
+            "model": "test-model-1",
+            "messages": [{"role": "user", "content": "Hello"}],
+            "stream": False
+        }
+        response = await test_client.post("/v1/chat/completions", json=request_body)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["choices"][0]["message"]["content"] == "Success from second"
+
+        # 验证第一个模型被禁用（而非冷却）
+        status = await test_model_manager.get_status()
+        disabled_ids = [item["id"] for item in status["disabled_list"]]
+        assert "Qwen/Qwen3-Coder-480B" in disabled_ids
+        
+        # 第二个模型应未被禁用
+        assert "Qwen/Qwen3.5-397B" not in disabled_ids
+
 
 @pytest.mark.asyncio
 class TestLogResponse:

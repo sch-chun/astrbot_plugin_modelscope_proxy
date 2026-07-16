@@ -48,7 +48,7 @@ from datetime import datetime, timedelta
     "modelscope_proxy",
     "sch-chun",
     "ModelScope 免费大模型自动代理插件",
-    "0.4.1",
+    "0.4.2",
 )
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:

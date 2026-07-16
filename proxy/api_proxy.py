@@ -275,8 +275,13 @@ def create_proxy_router(
                         logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
                     if await model_manager_ref.is_user_quota_exhausted():
                         return _quota_exhausted_response()
-                    await model_manager_ref.mark_cooldown(model_id, error_msg)
-                    raise RetryableError("Model on cooldown")
+                    
+                    if "has no provider supported" in resp.text:
+                        await model_manager_ref.mark_disabled(model_id, error_msg)
+                        raise RetryableError("Model disabled due to unsupported provider")
+                    else:
+                        await model_manager_ref.mark_cooldown(model_id, error_msg)
+                        raise RetryableError("Model on cooldown")
 
                 if resp.status_code == 429:
                     logger.warning(f"模型 {model_id} 返回 429 限速")
@@ -386,8 +391,13 @@ def create_proxy_router(
                             logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_body.decode('utf-8', errors='replace')[:2000]}")
                         if await model_manager_ref.is_user_quota_exhausted():
                             return _quota_exhausted_response()
-                        await model_manager_ref.mark_cooldown(model_id, error_msg)
-                        raise RetryableError("Model on cooldown")
+                        
+                        if "has no provider supported" in error_body.decode('utf-8', errors='replace'):
+                            await model_manager_ref.mark_disabled(model_id, error_msg)
+                            raise RetryableError("Model disabled due to unsupported provider")
+                        else:
+                            await model_manager_ref.mark_cooldown(model_id, error_msg)
+                            raise RetryableError("Model on cooldown")
 
                     if resp.status_code == 429:
                         await resp.aread()

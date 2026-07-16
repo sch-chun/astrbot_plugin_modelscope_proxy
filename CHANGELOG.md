@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-07-16
+
+### Changed
+- 返回 has no provider supported 时模型会被禁用一天
+
 ## [0.4.1] - 2026-07-04
 
 ### Added
