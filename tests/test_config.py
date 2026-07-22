@@ -1,5 +1,4 @@
-import pytest
-from proxy.config import ProxyConfig
+from ..proxy.config import ProxyConfig
 
 
 class TestProxyConfig:

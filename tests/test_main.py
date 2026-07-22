@@ -1,11 +1,9 @@
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
-from datetime import datetime
 
 from astrbot.api import AstrBotConfig
 from astrbot.api.star import Context
-from main import ModelScopeProxyPlugin
+from ..main import ModelScopeProxyPlugin
 
 
 @pytest.mark.asyncio

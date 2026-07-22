@@ -1,1 +1,2 @@
 tests/ export-ignore
+conftest.py export-ignore

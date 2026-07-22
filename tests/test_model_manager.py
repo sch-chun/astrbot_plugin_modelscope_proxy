@@ -1,7 +1,9 @@
 import pytest
-from datetime import date, timedelta
-from proxy.model_manager import ModelManager, HEADER_MODEL_REMAINING, HEADER_MODEL_LIMIT, HEADER_USER_REMAINING, HEADER_USER_LIMIT
 from unittest.mock import MagicMock
+
+from datetime import date, timedelta
+
+from ..proxy.model_manager import ModelManager, HEADER_MODEL_REMAINING, HEADER_MODEL_LIMIT, HEADER_USER_REMAINING, HEADER_USER_LIMIT
 
 
 class TestModelManager:

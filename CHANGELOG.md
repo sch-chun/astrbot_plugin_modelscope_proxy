@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-07-23
+
+### Fixed
+- 修复为修复测试自动发现而 sys.path.insert 导致插件间导入冲突的问题
+- 修复多个测试
+
 ## [0.4.2] - 2026-07-16
 
 ### Changed

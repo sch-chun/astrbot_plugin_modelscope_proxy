@@ -5,12 +5,6 @@ ModelScope Auto Proxy — AstrBot 插件版 v0.4.1
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
 初始化时自动从 ModelScope 获取可用模型列表，过滤无效配置。
 """
-import sys
-from pathlib import Path
-
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 import asyncio
 import threading
@@ -33,9 +27,9 @@ except ImportError:
     from quart import jsonify as json_response
 # -----------------------------
 
-from proxy.config import ProxyConfig
-from proxy.model_manager import ModelManager
-from proxy.api_proxy import create_proxy_router
+from .proxy.config import ProxyConfig
+from .proxy.model_manager import ModelManager
+from .proxy.api_proxy import create_proxy_router
 
 from typing import Optional, Callable, Union
 from fastapi.responses import JSONResponse
@@ -48,7 +42,8 @@ from datetime import datetime, timedelta
     "modelscope_proxy",
     "sch-chun",
     "ModelScope 免费大模型自动代理插件",
-    "0.4.2",
+    "0.4.3",
+    "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy"
 )
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:

@@ -4,16 +4,32 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
-from proxy.config import ProxyConfig
-from proxy.model_manager import ModelManager
-from proxy.api_proxy import create_proxy_router
+from ..proxy.config import ProxyConfig
+from ..proxy.model_manager import ModelManager
+from ..proxy.api_proxy import create_proxy_router
 
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Callable
 
 
 @pytest.mark.asyncio
 class TestAPIProxy:
     """API 代理集成测试（使用 FastAPI TestClient）"""
+    async def _create_app_and_client(
+        self,
+        proxy_config: ProxyConfig,
+        model_manager: ModelManager,
+        virtual_models: list,
+        provider_manager=None,
+    ) -> tuple[AsyncClient, Callable]:
+        """创建 FastAPI 应用和异步客户端，返回 (client, close_client)"""
+        app = FastAPI()
+        router, close_client = create_proxy_router(
+            proxy_config, model_manager, virtual_models, provider_manager
+        )
+        app.include_router(router)
+        client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        return client, close_client
+    
     async def test_models_endpoint_returns_all_virtual_models(
             self,
             test_client: AsyncClient,
@@ -43,32 +59,42 @@ class TestAPIProxy:
         assert "virtual_models" in data  # 由 api_proxy 添加
         assert isinstance(data["virtual_models"], list)
 
-    @patch("proxy.api_proxy.get_http_client")
-    async def test_chat_completion_success_non_stream(self, mock_get_client: AsyncMock, test_client: AsyncClient) -> None:
+    async def test_chat_completion_success_non_stream(
+        self,
+        test_proxy_config: ProxyConfig,
+        test_model_manager: ModelManager,
+        virtual_model_configs: list,
+    ) -> None:
         """POST /v1/chat/completions 非流式成功响应"""
-        mock_client = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.headers = {}
-        mock_response.json = MagicMock(return_value={
-            "choices": [{"message": {"content": "Hello from ModelScope"}}]
-        })
-        mock_response.content = b'{"choices": [{"message": {"content": "Hello from ModelScope"}}]}'
-        mock_client.post.return_value = mock_response
-        mock_get_client.return_value = mock_client
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
+            mock_client = AsyncMock()
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+            mock_response.headers = {}
+            mock_response.json = MagicMock(return_value={
+                "choices": [{"message": {"content": "Hello from ModelScope"}}]
+            })
+            mock_response.content = b'{"choices": [{"message": {"content": "Hello from ModelScope"}}]}'
+            mock_client.post.return_value = mock_response
+            mock_get.return_value = mock_client
 
-        request_body = {
-            "model": "test-model-1",  # 使用第一个虚拟模型
-            "messages": [{"role": "user", "content": "Hello"}],
-            "stream": False
-        }
-        response = await test_client.post("/v1/chat/completions", json=request_body)
-        assert response.status_code == 200
-        data = response.json()
-        assert "choices" in data
-        assert data["choices"][0]["message"]["content"] == "Hello from ModelScope"
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config, test_model_manager, virtual_model_configs
+            )
+            async with client:
+                request_body = {
+                    "model": "test-model-1",  # 使用第一个虚拟模型
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+                assert response.status_code == 200
+                data = response.json()
+                assert "choices" in data
+                assert data["choices"][0]["message"]["content"] == "Hello from ModelScope"
+            await close_client()
 
-    @patch("proxy.api_proxy.get_http_client")
+    @patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client")
     async def test_chat_completion_model_not_found_returns_404(
         self,
         mock_get_client: AsyncMock,
@@ -85,7 +111,7 @@ class TestAPIProxy:
         data = response.json()
         assert "not_found" in data["error"]["type"]
 
-    @patch("proxy.api_proxy.get_http_client")
+    @patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client")
     async def test_chat_completion_user_quota_exhausted_returns_503(
         self,
         mock_get_client: AsyncMock,
@@ -103,44 +129,50 @@ class TestAPIProxy:
         data = response.json()
         assert "quota_exhausted" in data["error"]["code"]
 
-    @patch("proxy.api_proxy.get_http_client")
     async def test_chat_completion_handles_quota_headers(
         self,
-        mock_get_client: AsyncMock,
-        test_client: AsyncClient,
-        test_model_manager: ModelManager
+        test_proxy_config: ProxyConfig,
+        test_model_manager: ModelManager,
+        virtual_model_configs: list,
     ) -> None:
-        """响应头中的限额信息应被正确处理（模型额度用尽时标记禁用）"""
-        mock_client = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.headers = {
-            "modelscope-ratelimit-model-requests-remaining": "0",
-            "modelscope-ratelimit-requests-remaining": "5"
-        }
-        mock_response.json = MagicMock(return_value={
-            "choices": [{"message": {"content": "Hello"}}]
-        })
-        mock_response.content = json.dumps(mock_response.json.return_value).encode()
-        mock_client.post.return_value = mock_response
-        mock_get_client.return_value = mock_client
+        """响应头中的限额信息应被正确处理"""
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
+            mock_client = AsyncMock()
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+            mock_response.headers = {
+                "modelscope-ratelimit-model-requests-remaining": "0",
+                "modelscope-ratelimit-requests-remaining": "5"
+            }
+            mock_response.json = MagicMock(return_value={
+                "choices": [{"message": {"content": "Hello"}}]
+            })
+            mock_response.content = json.dumps(mock_response.json.return_value).encode()
+            mock_client.post.return_value = mock_response
+            mock_get.return_value = mock_client
 
-        request_body = {
-            "model": "test-model-1",
-            "messages": [{"role": "user", "content": "Hello"}],
-            "stream": False
-        }
-        response = await test_client.post("/v1/chat/completions", json=request_body)
-        assert response.status_code == 200
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config, test_model_manager, virtual_model_configs
+            )
+            async with client:
+                request_body = {
+                    "model": "test-model-1",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+                assert response.status_code == 200
 
-        # 模型应被标记为禁用（通过 model_manager）
-        status = await test_model_manager.get_status()
-        disabled_ids = [item["id"] for item in status["disabled_list"]]
+                # 模型应被标记为禁用（通过 model_manager）
+                status = await test_model_manager.get_status()
+                disabled_ids = [item["id"] for item in status["disabled_list"]]
 
-        # 模型列表中的第一个模型（Qwen/Qwen3-Coder-480B）应被禁用
-        assert "Qwen/Qwen3-Coder-480B" in disabled_ids
+                # 模型列表中的第一个模型（Qwen/Qwen3-Coder-480B）应被禁用
+                assert "Qwen/Qwen3-Coder-480B" in disabled_ids
 
-    @patch("proxy.api_proxy.get_http_client")
+            await close_client()
+
+    @patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client")
     async def test_chat_completion_global_quota_reserve_triggers_exhaustion(
         self,
         mock_get_client: AsyncMock,
@@ -198,48 +230,57 @@ class TestAPIProxy:
 
         await close_client()
 
-    @patch("proxy.api_proxy.get_http_client")
     async def test_chat_completion_fallback_when_all_models_disabled(
         self,
-        mock_get_client: AsyncMock,
-        test_client: AsyncClient,
+        test_proxy_config: ProxyConfig,
         test_model_manager: ModelManager,
-        test_proxy_config: ProxyConfig
+        virtual_model_configs: list,
+        mock_provider_manager: AsyncMock
     ) -> None:
         """当所有 ModelScope 模型不可用时，应调用兜底模型"""
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
 
-        # 禁用所有 ModelScope 模型（针对 test-model-2 的列表）
-        # test-model-2 有 fallback，model_list 只有一个模型
-        await test_model_manager.mark_disabled("Qwen/Qwen3-393B", "test")
+            # 禁用所有 ModelScope 模型（针对 test-model-2 的列表）
+            # test-model-2 有 fallback，model_list 只有一个模型
+            await test_model_manager.mark_disabled("Qwen/Qwen3-393B", "test")
 
-        # 模拟兜底 API 调用
-        mock_client = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.headers = {}
-        mock_response.json = MagicMock(return_value={
-            "choices": [{"message": {"content": "Fallback response"}}]
-        })
-        mock_response.content = b'{"choices": [{"message": {"content": "Fallback response"}}]}'
-        mock_client.post.return_value = mock_response
-        mock_get_client.return_value = mock_client
+            # 模拟兜底 API 调用
+            mock_client = AsyncMock()
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+            mock_response.headers = {}
+            mock_response.json = MagicMock(return_value={
+                "choices": [{"message": {"content": "Fallback response"}}]
+            })
+            mock_response.content = b'{"choices": [{"message": {"content": "Fallback response"}}]}'
+            mock_client.post.return_value = mock_response
+            mock_get.return_value = mock_client
 
-        request_body = {
-            "model": "test-model-2",  # 有 fallback 的虚拟模型
-            "messages": [{"role": "user", "content": "Hello"}],
-            "stream": False
-        }
-        response = await test_client.post("/v1/chat/completions", json=request_body)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["choices"][0]["message"]["content"] == "Fallback response"
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config,
+                test_model_manager,
+                virtual_model_configs,
+                mock_provider_manager
+            )
+            async with client:
+                request_body = {
+                    "model": "test-model-2",  # 有 fallback 的虚拟模型
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+                assert response.status_code == 200
+                data = response.json()
+                assert data["choices"][0]["message"]["content"] == "Fallback response"
 
-        # 验证调用的是 fallback URL
-        mock_client.post.assert_called_once()
-        call_url = mock_client.post.call_args[0][0]
-        assert "fallback.api.com" in call_url
+                # 验证调用的是 fallback URL
+                mock_client.post.assert_called_once()
+                call_url = mock_client.post.call_args[0][0]
+                assert "fallback.api.com" in call_url
 
-    @patch("proxy.api_proxy.get_http_client")
+            await close_client()
+
+    @patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client")
     async def test_chat_completion_no_fallback_when_empty(
         self,
         mock_get_client: AsyncMock,
@@ -260,7 +301,7 @@ class TestAPIProxy:
         response = await test_client.post("/v1/chat/completions", json=request_body)
         assert response.status_code == 503
 
-    @patch("proxy.api_proxy.get_http_client")
+    @patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client")
     async def test_chat_completion_api_key_auth(
         self,
         mock_get_client: AsyncMock,
@@ -320,91 +361,104 @@ class TestAPIProxy:
 
         await close_client()
     
-    @patch("proxy.api_proxy.get_http_client")
     async def test_chat_completion_402_retries_next_model(
         self,
-        mock_get_client: AsyncMock,
-        test_client: AsyncClient,
-        test_model_manager: ModelManager
+        test_proxy_config: ProxyConfig,
+        test_model_manager: ModelManager,
+        virtual_model_configs: list
     ) -> None:
         """当上游返回 402 时，应尝试下一个模型（如果有）"""
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
 
-        # 模拟第一个模型返回 402
-        mock_client = AsyncMock()
-        mock_response_402 = AsyncMock()
-        mock_response_402.status_code = 402
-        mock_response_402.text = "Infsufficient balance"
-        mock_response_402.content = b'{"error": {"message": "Infsufficient balance"}}'
+            # 模拟第一个模型返回 402
+            mock_client = AsyncMock()
+            mock_response_402 = AsyncMock()
+            mock_response_402.status_code = 402
+            mock_response_402.text = "Infsufficient balance"
+            mock_response_402.content = b'{"error": {"message": "Infsufficient balance"}}'
 
-        # 模拟第二个模型返回 200
-        mock_response_200 = AsyncMock()
-        mock_response_200.status_code = 200
-        mock_response_200.headers = {}
-        mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Hello from second model"}}]})
-        mock_response_200.content = b'{"choices": [{"message": {"content": "Hello from second model"}}]}'
+            # 模拟第二个模型返回 200
+            mock_response_200 = AsyncMock()
+            mock_response_200.status_code = 200
+            mock_response_200.headers = {}
+            mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Hello from second model"}}]})
+            mock_response_200.content = b'{"choices": [{"message": {"content": "Hello from second model"}}]}'
 
-        # 第一次调用返回 402，第二次调用返回 200
-        mock_client.post.side_effect = [mock_response_402, mock_response_200]
-        mock_get_client.return_value = mock_client
+            # 第一次调用返回 402，第二次调用返回 200
+            mock_client.post.side_effect = [mock_response_402, mock_response_200]
+            mock_get.return_value = mock_client
 
-        request_body = {
-            "model": "test-model-1",  # 有两个模型的虚拟模型
-            "messages": [{"role": "user", "content": "Hello"}],
-            "stream": False
-        }
-        response = await test_client.post("/v1/chat/completions", json=request_body)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["choices"][0]["message"]["content"] == "Hello from second model"
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config, test_model_manager, virtual_model_configs
+            )
+            async with client:
+                request_body = {
+                    "model": "test-model-1",  # 有两个模型的虚拟模型
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+                assert response.status_code == 200
+                data = response.json()
+                assert data["choices"][0]["message"]["content"] == "Hello from second model"
 
-    @patch("proxy.api_proxy.get_http_client")
+            await close_client()
+
     async def test_chat_completion_400_unsupported_provider_disables_model(
         self,
-        mock_get_client: AsyncMock,
-        test_client: AsyncClient,
-        test_model_manager: ModelManager
+        test_proxy_config: ProxyConfig,
+        test_model_manager: ModelManager,
+        virtual_model_configs: list
     ) -> None:
         """当上游返回 400 且消息包含 'has no provider supported' 时，模型应被禁用并尝试下一个"""
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
 
-        # 准备 mock：第一个模型返回 400 特定错误
-        mock_client = AsyncMock()
+            # 准备 mock：第一个模型返回 400 特定错误
+            mock_client = AsyncMock()
         
-        # 第一个响应：400 + 特定消息
-        error_body = b'{"error":{"message":"Model id : MiniMax/MiniMax-M2.7 , has no provider supported","request_id":"xxx"}}'
-        mock_response_400 = AsyncMock()
-        mock_response_400.status_code = 400
-        mock_response_400.text = error_body.decode()
-        mock_response_400.content = error_body
-        mock_response_400.json = MagicMock(side_effect=json.JSONDecodeError("Not JSON", "doc", 0))  # 不需要解析
+            # 第一个响应：400 + 特定消息
+            error_body = b'{"error":{"message":"Model id : MiniMax/MiniMax-M2.7 , has no provider supported","request_id":"xxx"}}'
+            mock_response_400 = AsyncMock()
+            mock_response_400.status_code = 400
+            mock_response_400.text = error_body.decode()
+            mock_response_400.content = error_body
+            mock_response_400.json = MagicMock(side_effect=json.JSONDecodeError("Not JSON", "doc", 0))  # 不需要解析
 
-        # 第二个响应：200 成功
-        mock_response_200 = AsyncMock()
-        mock_response_200.status_code = 200
-        mock_response_200.headers = {}
-        mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Success from second"}}]})
-        mock_response_200.content = b'{"choices": [{"message": {"content": "Success from second"}}]}'
+            # 第二个响应：200 成功
+            mock_response_200 = AsyncMock()
+            mock_response_200.status_code = 200
+            mock_response_200.headers = {}
+            mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Success from second"}}]})
+            mock_response_200.content = b'{"choices": [{"message": {"content": "Success from second"}}]}'
 
-        mock_client.post.side_effect = [mock_response_400, mock_response_200]
-        mock_get_client.return_value = mock_client
+            mock_client.post.side_effect = [mock_response_400, mock_response_200]
+            mock_get.return_value = mock_client
 
-        # 使用 test-model-1（有两个模型：Qwen/Qwen3-Coder-480B 和 Qwen/Qwen3.5-397B）
-        request_body = {
-            "model": "test-model-1",
-            "messages": [{"role": "user", "content": "Hello"}],
-            "stream": False
-        }
-        response = await test_client.post("/v1/chat/completions", json=request_body)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["choices"][0]["message"]["content"] == "Success from second"
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config, test_model_manager, virtual_model_configs
+            )
+            async with client:
+                
+                # 使用 test-model-1（有两个模型：Qwen/Qwen3-Coder-480B 和 Qwen/Qwen3.5-397B）
+                request_body = {
+                    "model": "test-model-1",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+                assert response.status_code == 200
+                data = response.json()
+                assert data["choices"][0]["message"]["content"] == "Success from second"
 
-        # 验证第一个模型被禁用（而非冷却）
-        status = await test_model_manager.get_status()
-        disabled_ids = [item["id"] for item in status["disabled_list"]]
-        assert "Qwen/Qwen3-Coder-480B" in disabled_ids
-        
-        # 第二个模型应未被禁用
-        assert "Qwen/Qwen3.5-397B" not in disabled_ids
+                # 验证第一个模型被禁用（而非冷却）
+                status = await test_model_manager.get_status()
+                disabled_ids = [item["id"] for item in status["disabled_list"]]
+                assert "Qwen/Qwen3-Coder-480B" in disabled_ids
+                
+                # 第二个模型应未被禁用
+                assert "Qwen/Qwen3.5-397B" not in disabled_ids
+
+            await close_client()
 
 
 @pytest.mark.asyncio
@@ -468,7 +522,7 @@ class TestLogResponse:
             mock_stream_cm.__aexit__ = AsyncMock(return_value=None)
             mock_client.stream = MagicMock(return_value=mock_stream_cm)
 
-        with patch('proxy.api_proxy.get_http_client', return_value=mock_client):
+        with patch('astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client', return_value=mock_client):
             with patch('astrbot.api.logger.info') as mock_log_info:
                 async with AsyncClient(
                     transport=ASGITransport(app=app),
@@ -546,7 +600,7 @@ class TestLogResponse:
         # side_effect 依次返回
         mock_client.post.side_effect = [mock_response_invalid, mock_response_valid]
 
-        with patch('proxy.api_proxy.get_http_client', return_value=mock_client):
+        with patch('astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client', return_value=mock_client):
             with patch('astrbot.api.logger.info') as mock_log_info, \
                 patch('astrbot.api.logger.warning') as mock_log_warning:
                 async with AsyncClient(

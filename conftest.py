@@ -1,10 +1,3 @@
-import sys
-from pathlib import Path
-
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, create_autospec
@@ -63,7 +56,7 @@ def mock_context() -> AsyncMock:
 @pytest_asyncio.fixture
 async def plugin_instance(mock_astrbot_config: AstrBotConfig, mock_context: AsyncMock) -> AsyncGenerator:
     """插件实例 fixture（阻止实际启动 uvicorn）"""
-    from ..main import ModelScopeProxyPlugin
+    from .main import ModelScopeProxyPlugin
     plugin = ModelScopeProxyPlugin(mock_context, mock_astrbot_config)
 
     # 阻止实际启动 uvicorn
