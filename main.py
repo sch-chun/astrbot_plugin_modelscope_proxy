@@ -5,11 +5,12 @@ ModelScope Auto Proxy — AstrBot 插件版 v0.4.1
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
 初始化时自动从 ModelScope 获取可用模型列表，过滤无效配置。
 """
-
 import asyncio
 import threading
 import httpx
 import time
+import yaml
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -58,7 +59,17 @@ class ModelScopeProxyPlugin(Star):
         self._reset_task: Optional[asyncio.Task] = None
         self._stop_tasks: bool = False
         self._close_http_client: Optional[Callable] = None
-        self._plugin_name: str = "modelscope_proxy"   # 插件名常量
+
+        meta_path = Path(__file__).parent / "metadata.yaml"
+        plugin_name = "modelscope_proxy"
+        if meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = yaml.safe_load(f)
+                    self._plugin_name = meta.get("name", plugin_name)
+            except Exception as e:
+                logger.error(f"读取插件元数据失败: {e}")
+            self._plugin_name = plugin_name
 
     async def initialize(self) -> None:
         """插件初始化：读取配置 → 初始化模型管理器 → 启动代理服务"""

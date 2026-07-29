@@ -4,3 +4,5 @@ desc: ModelScope 免费大模型自动代理插件。手动配置 model_list，�
 version: v0.4.3
 author: sch-chun
 repo: https://github.com/sch-chun/astrbot_plugin_modelscope_proxy
+astrbot_version: ">=4.24.0"
+social_link: https://github.com/sch-chun
