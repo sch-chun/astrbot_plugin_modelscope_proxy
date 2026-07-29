@@ -39,12 +39,31 @@ from quart.wrappers import Response
 from datetime import datetime, timedelta
 
 
+META_PATH = Path(__file__).parent / "metadata.yaml"
+PLUGIN_NAME = "modelscope_proxy"
+AUTHOR = "sch-chun"
+DESC = "ModelScope 免费大模型自动代理插件"
+VERSION = "0.4.3"
+REPO = "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy"
+if META_PATH.exists():
+    try:
+        with open(META_PATH, "r", encoding="utf-8") as f:
+            META = yaml.safe_load(f)
+            PLUGIN_NAME = META.get("name", PLUGIN_NAME)
+            AUTHOR = META.get("author", "sch-chun")
+            DESC = META.get("desc", "ModelScope 免费大模型自动代理插件")
+            VERSION = META.get("version", "0.4.3")
+            REPO = META.get("repo", "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy")
+    except Exception as e:
+        logger.error(f"读取插件元数据失败: {e}")
+
+
 @register(
-    "modelscope_proxy",
-    "sch-chun",
-    "ModelScope 免费大模型自动代理插件",
-    "0.4.3",
-    "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy"
+    PLUGIN_NAME,
+    AUTHOR,
+    DESC,
+    VERSION,
+    REPO
 )
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
@@ -60,16 +79,7 @@ class ModelScopeProxyPlugin(Star):
         self._stop_tasks: bool = False
         self._close_http_client: Optional[Callable] = None
 
-        meta_path = Path(__file__).parent / "metadata.yaml"
-        plugin_name = "modelscope_proxy"
-        if meta_path.exists():
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = yaml.safe_load(f)
-                    self._plugin_name = meta.get("name", plugin_name)
-            except Exception as e:
-                logger.error(f"读取插件元数据失败: {e}")
-            self._plugin_name = plugin_name
+        self._plugin_name = PLUGIN_NAME
 
     async def initialize(self) -> None:
         """插件初始化：读取配置 → 初始化模型管理器 → 启动代理服务"""
@@ -152,8 +162,8 @@ class ModelScopeProxyPlugin(Star):
 
         # 7. 创建 FastAPI 代理应用
         self._fastapi_app = FastAPI(
-            title="ModelScope Proxy",
-            version="0.4.0",
+            title=PLUGIN_NAME,
+            version=VERSION,
         )
 
         provider_manager = self.context.provider_manager if hasattr(self.context, "provider_manager") else None

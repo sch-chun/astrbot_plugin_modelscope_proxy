@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.4] - 2026-07-29
+
+### Changed
+- 改为从 metadata.yaml 直接读取元数据
+
 ## [0.4.3] - 2026-07-23
 
 ### Fixed
