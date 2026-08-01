@@ -43,7 +43,7 @@ META_PATH = Path(__file__).parent / "metadata.yaml"
 PLUGIN_NAME = "modelscope_proxy"
 AUTHOR = "sch-chun"
 DESC = "ModelScope 免费大模型自动代理插件"
-VERSION = "0.4.3"
+VERSION = "0.4.5"
 REPO = "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy"
 if META_PATH.exists():
     try:
@@ -52,7 +52,7 @@ if META_PATH.exists():
             PLUGIN_NAME = META.get("name", PLUGIN_NAME)
             AUTHOR = META.get("author", "sch-chun")
             DESC = META.get("desc", "ModelScope 免费大模型自动代理插件")
-            VERSION = META.get("version", "0.4.3")
+            VERSION = META.get("version", "0.4.5")
             REPO = META.get("repo", "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy")
     except Exception as e:
         logger.error(f"读取插件元数据失败: {e}")
@@ -132,7 +132,6 @@ class ModelScopeProxyPlugin(Star):
         proxy_port = int(self.config.get("proxy_port", 3473))
         proxy_host = self.config.get("proxy_host", "127.0.0.1")
         proxy_api_key = self.config.get("proxy_api_key", "")
-        show_model_tag = bool(self.config.get("show_model_tag", False))
         log_response = bool(self.config.get("log_response", False))
         global_quota_reserve = int(self.config.get("global_quota_reserve", 0))
 
@@ -143,7 +142,6 @@ class ModelScopeProxyPlugin(Star):
             proxy_port=proxy_port,
             proxy_host=proxy_host,
             proxy_api_key=proxy_api_key,
-            show_model_tag=show_model_tag,
             log_response=log_response,
             global_quota_reserve=global_quota_reserve,
             virtual_models=self._virtual_models

@@ -9,7 +9,6 @@ class TestProxyConfig:
         assert c.proxy_port == 3473
         assert c.proxy_host == "127.0.0.1"
         assert c.proxy_api_key == ""
-        assert c.show_model_tag is False
         assert c.log_response is False
         assert c.global_quota_reserve == 0
         assert c.virtual_models == []
@@ -22,7 +21,6 @@ class TestProxyConfig:
             proxy_port=8080,
             proxy_host="0.0.0.0",
             proxy_api_key="secret",
-            show_model_tag=True,
             log_response=True,
             global_quota_reserve=10,
             virtual_models=[v1, v2]

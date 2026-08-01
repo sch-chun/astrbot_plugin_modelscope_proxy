@@ -8,7 +8,6 @@ class ProxyConfig:
     proxy_port: int = 3473
     proxy_host: str = "127.0.0.1"
     proxy_api_key: str = ""
-    show_model_tag: bool = False
     log_response: bool = False
     global_quota_reserve: int = 0
     virtual_models: list[dict] = field(default_factory=list)

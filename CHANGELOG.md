@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] - 2026-08-01
+
+### Changed
+- 删除了目前用不上的模型名注入功能，简化维护（若有需要请提 Issue）
+- 更新 README 和默认配置
+
 ## [0.4.4] - 2026-07-29
 
 ### Changed

@@ -18,7 +18,6 @@
 - **📈 监控面板** — 内置 WebUI 页面，可视化展示用户额度及各模型状态
 - **⏱ 每日自动重置** — 每日零点自动清除禁用记录，恢复所有模型
 - **🚦 流式/非流式都支持** — SSE 流式传输完整可用
-- **📎 可选的模型标记** — 开启后每个回复自动注入当前使用的模型名，方便排查
 
 ---
 
@@ -26,7 +25,7 @@
 
 ### 1. 安装插件
 
-在 AstrBot 管理面板的「AstrBot 插件」中通过 GitHub 链接安装，或将本仓库克隆到 `AstrBot/data/plugins/` 目录下。
+在 AstrBot 管理面板中，进入 **插件市场**，搜索 `Modelscope Proxy` 并安装。
 
 ### 2. 获取 ModelScope API Key
 
@@ -44,7 +43,6 @@
 | `proxy_port` | int | `3473` | 代理服务监听端口 |
 | `proxy_host` | string | `"127.0.0.1"` | 代理服务监听地址（建议保持本地，如需外部访问改为 `0.0.0.0`） |
 | `proxy_api_key` | string | `""` | 代理服务自身 API Key（可选，设置后客户端需在 `Authorization: Bearer <key>` 中携带） |
-| `show_model_tag` | bool | `false` | 是否在回复中注入 `[模型名]` 标记 |
 | `log_response` | bool | `false` | 调试时开启，将上游响应内容打印到日志 |
 | `global_quota_reserve` | int | `0` | 全局额度保留值（次），剩余 ≤ 该值时停止调用，保护其他服务 |
 | `virtual_models` | template_list | `[]` | **虚拟模型配置列表**（核心配置，见下方说明） |

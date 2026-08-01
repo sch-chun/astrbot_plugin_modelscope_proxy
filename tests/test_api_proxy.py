@@ -187,7 +187,6 @@ class TestAPIProxy:
             base_url="https://api-inference.modelscope.cn/v1",
             proxy_port=3473,
             proxy_host="127.0.0.1",
-            show_model_tag=False,
             log_response=False,
             global_quota_reserve=5,  # 保留 5 次
             virtual_models=[{"name": "test-model-1", "model_list": ["Qwen/Qwen3-Coder-480B"]}]
@@ -317,7 +316,6 @@ class TestAPIProxy:
             proxy_port=test_proxy_config.proxy_port,
             proxy_host=test_proxy_config.proxy_host,
             proxy_api_key="secure-key",  # 设置验证密钥
-            show_model_tag=test_proxy_config.show_model_tag,
             log_response=test_proxy_config.log_response,
             global_quota_reserve=test_proxy_config.global_quota_reserve,
             virtual_models=test_proxy_config.virtual_models
@@ -477,7 +475,6 @@ class TestLogResponse:
             base_url="https://api-inference.modelscope.cn/v1",
             proxy_port=3473,
             proxy_host="127.0.0.1",
-            show_model_tag=False,
             log_response=log_response,
             global_quota_reserve=0,
             virtual_models=[{"name": "test-model", "model_list": ["Qwen/Qwen3-Coder-480B"]}]
@@ -556,7 +553,6 @@ class TestLogResponse:
             base_url="https://api-inference.modelscope.cn/v1",
             proxy_port=3473,
             proxy_host="127.0.0.1",
-            show_model_tag=False,
             log_response=True,
             global_quota_reserve=0,
             virtual_models=[

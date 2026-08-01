@@ -110,7 +110,6 @@ def test_proxy_config(virtual_model_configs: list) -> ProxyConfig:
         proxy_port=3473,
         proxy_host="127.0.0.1",
         proxy_api_key="",  # 可设为 "secret" 测试验证
-        show_model_tag=False,
         log_response=False,
         global_quota_reserve=0,
         virtual_models=virtual_model_configs

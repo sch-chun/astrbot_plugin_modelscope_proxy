@@ -76,12 +76,6 @@ def create_proxy_router(
     router = APIRouter()
 
     # ---- 辅助函数 ----
-    def _short_model_name(model_id: str) -> str:
-        return model_id.split("/")[-1]
-
-    def _inject_model_tag(content: str, model_id: str) -> str:
-        return f"[{_short_model_name(model_id)}] " + content
-
     def _quota_exhausted_response() -> JSONResponse:
         return JSONResponse(
             status_code=503,
@@ -122,48 +116,6 @@ def create_proxy_router(
         if token != proxy_key:
             logger.warning(f"API Key 验证失败: 提供的 token 与配置不匹配")
             return _unauthorized_response()
-        return None
-
-    def _inject_tag_to_response(resp_data: dict, model_id: str) -> dict:
-        try:
-            choices = resp_data.get("choices", [])
-            if choices:
-                msg = choices[0].get("message", {})
-                content = msg.get("content")
-                if isinstance(content, str) and content:
-                    msg["content"] = _inject_model_tag(content, model_id)
-                    choices[0]["message"] = msg
-                    resp_data["choices"] = choices
-        except Exception:
-            pass
-        return resp_data
-
-    def _try_inject_tag_stream_chunk(chunk: bytes, model_id: str) -> Optional[bytes]:
-        try:
-            text = chunk.decode("utf-8")
-            for line in text.split("\n"):
-                line = line.strip()
-                if not line.startswith("data:"):
-                    continue
-                data_str = line[5:].strip()
-                if data_str == "[DONE]":
-                    return None
-                data = json.loads(data_str)
-                choices = data.get("choices", [])
-                if not choices:
-                    return None
-                delta = choices[0].get("delta", {})
-                content = delta.get("content")
-                if isinstance(content, str) and content:
-                    delta["content"] = _inject_model_tag(content, model_id)
-                    choices[0]["delta"] = delta
-                    data["choices"] = choices
-                    new_data_str = json.dumps(data, ensure_ascii=False)
-                    new_line = f"data: {new_data_str}"
-                    new_text = text.replace(line, new_line, 1)
-                    return new_text.encode("utf-8")
-        except Exception:
-            pass
         return None
 
     def _log_non_stream_response(model_id: str, resp_content: Optional[bytes]) -> None:
@@ -232,7 +184,6 @@ def create_proxy_router(
         body: dict,
         model_id: str,
         is_stream: bool,
-        show_tag: bool,
         log_resp: bool,
         timeout: int,
         check_quota: bool = False,
@@ -338,21 +289,11 @@ def create_proxy_router(
                 await model_manager_ref.reset_429(model_id)
                 logger.info(f"模型 {model_id} 请求成功")
 
-            if show_tag:
-                try:
-                    resp_data = resp.json()
-                    resp_data = _inject_tag_to_response(resp_data, model_id)
-                    resp_content = json.dumps(resp_data, ensure_ascii=False).encode("utf-8")
-                except Exception:
-                    resp_content = resp.content
-            else:
-                resp_content = resp.content
-
             if log_resp:
-                _log_non_stream_response(model_id, resp_content)
+                _log_non_stream_response(model_id, resp.content)
 
             return Response(
-                content=resp_content,
+                content=resp.content,
                 status_code=resp.status_code,
                 headers={"Content-Type": "application/json"},
             )
@@ -434,14 +375,6 @@ def create_proxy_router(
                         async for chunk in resp.aiter_bytes():
                             if log_resp:
                                 _collect_stream_text(chunk, collected_text)
-                            if show_tag and not injected:
-                                injected_chunk = _try_inject_tag_stream_chunk(chunk, model_id)
-                                if injected_chunk is not None:
-                                    injected = True
-                                    yield injected_chunk
-                                    continue
-                                else:
-                                    yield chunk
                             else:
                                 yield chunk
                     finally:
@@ -519,13 +452,12 @@ def create_proxy_router(
         fallback = vconf.get("fallback", "")
         timeout = vconf.get("timeout", 240)
         is_stream = body.get("stream", False)
-        show_tag = config.show_model_tag
         log_resp = config.log_response
 
         if await model_manager.is_user_quota_exhausted():
             if fallback:
                 logger.info(f"用户额度耗尽，使用虚拟模型 '{requested_model}' 的兜底模型")
-                return await _call_fallback(fallback, body, is_stream, show_tag, log_resp, timeout=timeout)
+                return await _call_fallback(fallback, body, is_stream, log_resp, timeout=timeout)
             else:
                 return _quota_exhausted_response()
 
@@ -551,7 +483,6 @@ def create_proxy_router(
                     body=body_for_request,
                     model_id=model,
                     is_stream=is_stream,
-                    show_tag=show_tag,
                     log_resp=log_resp,
                     timeout=timeout,
                     check_quota=True,
@@ -574,7 +505,7 @@ def create_proxy_router(
 
         if fallback:
             logger.info(f"所有 ModelScope 模型失败，使用虚拟模型 '{requested_model}' 的兜底模型")
-            return await _call_fallback(fallback, body, is_stream, show_tag, log_resp, timeout=timeout)
+            return await _call_fallback(fallback, body, is_stream, log_resp, timeout=timeout)
         else:
             return JSONResponse(
                 status_code=503,
@@ -587,7 +518,7 @@ def create_proxy_router(
                 },
             )
 
-    async def _call_fallback(fallback, body: dict, is_stream: bool, show_tag: bool, log_resp: bool, timeout: int) -> Response:
+    async def _call_fallback(fallback, body: dict, is_stream: bool, log_resp: bool, timeout: int) -> Response:
         """调用兜底模型"""
         if not provider_manager:
             logger.error("ProviderManager 未初始化，无法使用兜底模型")
@@ -647,7 +578,6 @@ def create_proxy_router(
                 body=body_for_fallback,
                 model_id=model,
                 is_stream=is_stream,
-                show_tag=show_tag,
                 log_resp=log_resp,
                 timeout=timeout,
                 check_quota=False,
