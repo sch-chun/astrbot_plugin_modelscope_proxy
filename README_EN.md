@@ -4,6 +4,8 @@ Wraps the free LLM API-Inference endpoints from [ModelScope](https://modelscope.
 
 > ModelScope provides **a large number of free daily API calls** for each account (limits vary by model). This plugin lets you use them as if they were a single model — automatically rotating between models, skipping those that run out of quota, and recovering them the next day.
 
+[简体中文](README.md) | **English** | [Русский](README_RU.md)
+
 ---
 
 ## Features
@@ -16,7 +18,7 @@ Wraps the free LLM API-Inference endpoints from [ModelScope](https://modelscope.
 - **🔒 API Key Authentication** — Optionally set an API key for the proxy itself to prevent unauthorized access.
 - **🌐 Configurable Listen Address** — Defaults to `127.0.0.1`; can be changed to `0.0.0.0` for external access.
 - **📈 Monitoring Dashboard** — Built-in WebUI that visualizes user quota and per-model status.
-- **⏱ Daily Auto Reset** — All disabled models are re-enabled automatically at midnight.
+- **⏱️ Daily Auto Reset** — All disabled models are re-enabled automatically at midnight.
 - **🚦 Full Streaming Support** — SSE streaming works seamlessly.
 
 ---
