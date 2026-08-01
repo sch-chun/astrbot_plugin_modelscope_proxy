@@ -43,7 +43,7 @@ META_PATH = Path(__file__).parent / "metadata.yaml"
 PLUGIN_NAME = "modelscope_proxy"
 AUTHOR = "sch-chun"
 DESC = "ModelScope 免费大模型自动代理插件"
-VERSION = "0.4.5"
+VERSION = "0.4.6"
 REPO = "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy"
 if META_PATH.exists():
     try:
@@ -52,7 +52,7 @@ if META_PATH.exists():
             PLUGIN_NAME = META.get("name", PLUGIN_NAME)
             AUTHOR = META.get("author", "sch-chun")
             DESC = META.get("desc", "ModelScope 免费大模型自动代理插件")
-            VERSION = META.get("version", "0.4.5")
+            VERSION = META.get("version", "0.4.6")
             REPO = META.get("repo", "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy")
     except Exception as e:
         logger.error(f"读取插件元数据失败: {e}")

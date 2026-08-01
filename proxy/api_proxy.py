@@ -198,16 +198,6 @@ def create_proxy_router(
             if check_quota and model_manager_ref:
                 await model_manager_ref.check_quota_headers(model_id, resp.headers)
 
-            if resp.status_code >= 400 and resp.status_code not in (404, 500, 502, 503, 400, 429, 402):
-                logger.error(f"模型 {model_id} 不可重试错误: HTTP {resp.status_code}")
-                if log_resp:
-                    logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
-                return Response(
-                    content=resp.content,
-                    status_code=resp.status_code,
-                    headers={"Content-Type": "application/json"},
-                )
-
             if check_quota and model_manager_ref:
                 if resp.status_code in (404, 500, 502, 503):
                     error_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
@@ -250,6 +240,17 @@ def create_proxy_router(
                         return _quota_exhausted_response()
                     await model_manager_ref.mark_disabled(model_id, error_msg)
                     raise RetryableError("Model disabled due to insufficient balance")
+
+            # 2. 处理所有其他 HTTP 错误
+            if resp.status_code >= 400:
+                logger.error(f"模型 {model_id} 不可重试错误: HTTP {resp.status_code}")
+                if log_resp:
+                    logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={resp.text[:2000]}")
+                return Response(
+                    content=resp.content,
+                    status_code=resp.status_code,
+                    headers={"Content-Type": "application/json"},
+                )
                 
             # ---- 成功响应 ----
             # 检查响应内容是否有效（choices 不为空）

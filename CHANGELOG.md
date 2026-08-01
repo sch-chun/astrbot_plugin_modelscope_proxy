@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.6] - 2026-08-01
+
+### Fixed
+- 修复兜底调用返回 >= 400 错误时被解析为 no choices 错误的问题
+
 ## [0.4.5] - 2026-08-01
 
 ### Changed
