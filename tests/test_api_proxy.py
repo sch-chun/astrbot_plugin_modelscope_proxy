@@ -458,6 +458,118 @@ class TestAPIProxy:
 
             await close_client()
 
+    async def test_chat_completion_image_error_does_not_cooldown(
+        self,
+        test_proxy_config,
+        test_model_manager,
+        virtual_model_configs,
+        mock_provider_manager
+    ) -> None:
+        """上游返回图片大小/尺寸超限错误时，模型不标记冷却，且直接进入fallback（如果配置）"""
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
+
+            # 模拟第一个模型返回400图片错误
+            mock_client = AsyncMock()
+            error_body = b'{"error":{"message":"image file size exceed limit: 5242880"}}'
+            mock_response_400 = AsyncMock()
+            mock_response_400.status_code = 400
+            mock_response_400.text = error_body.decode()
+            mock_response_400.content = error_body
+            mock_response_400.json = MagicMock(side_effect=json.JSONDecodeError("Not JSON", "doc", 0))
+
+            # 模拟第二个模型返回200（如果有的话）
+            mock_response_200 = AsyncMock()
+            mock_response_200.status_code = 200
+            mock_response_200.headers = {}
+            mock_response_200.json = MagicMock(return_value={"choices": [{"message": {"content": "Fallback response"}}]})
+            mock_response_200.content = b'{"choices": [{"message": {"content": "Fallback response"}}]}'
+
+            # 第一次调用（test-model-1 的第一个模型）返回400错误，然后不会尝试第二个（因为break退出循环）
+            mock_client.post.side_effect = [mock_response_400, mock_response_200]
+            mock_get.return_value = mock_client
+
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config, test_model_manager, virtual_model_configs,
+                provider_manager=mock_provider_manager
+            )
+            async with client:
+                request_body = {
+                    "model": "test-model-1",  # 没有fallback
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+
+                # 因为没有fallback，应返回503
+                assert response.status_code == 503
+                data = response.json()
+                assert "all_models_unavailable" in data["error"]["code"]
+
+                # 验证第一个模型没有被冷却或禁用（因为ImageConstraintError直接break）
+                status = await test_model_manager.get_status()
+                disabled_ids = [item["id"] for item in status["disabled_list"]]
+                cooldown_ids = [item["id"] for item in status["cooldown_list"]]
+                assert "Qwen/Qwen3-Coder-480B" not in disabled_ids
+                assert "Qwen/Qwen3-Coder-480B" not in cooldown_ids
+
+            await close_client()
+
+    async def test_chat_completion_image_error_triggers_fallback(
+        self,
+        test_proxy_config,
+        test_model_manager,
+        virtual_model_configs,
+        mock_provider_manager
+    ) -> None:
+        """上游返回图片错误时，如果有fallback则直接调用，且模型不被禁用"""
+        with patch("astrbot_plugin_modelscope_proxy.proxy.api_proxy.get_http_client") as mock_get:
+            mock_client = AsyncMock()
+            error_body = b'{"error":{"message":"input size exceed limit 2048x2048"}}'
+            mock_response_400 = AsyncMock()
+            mock_response_400.status_code = 400
+            mock_response_400.text = error_body.decode()
+            mock_response_400.content = error_body
+            mock_response_400.json = MagicMock(side_effect=json.JSONDecodeError("Not JSON", "doc", 0))
+
+            # 模拟fallback调用成功
+            mock_response_fallback = AsyncMock()
+            mock_response_fallback.status_code = 200
+            mock_response_fallback.headers = {}
+            mock_response_fallback.json = MagicMock(return_value={"choices": [{"message": {"content": "Fallback content"}}]})
+            mock_response_fallback.content = b'{"choices": [{"message": {"content": "Fallback content"}}]}'
+
+            # 第一次调用返回400，第二次是fallback（但fallback会走自己的_call_external_api，所以需要两个不同的调用）
+            mock_client.post.side_effect = [mock_response_400, mock_response_fallback]
+            mock_get.return_value = mock_client
+
+            # 使用有fallback的虚拟模型 test-model-2
+            client, close_client = await self._create_app_and_client(
+                test_proxy_config, test_model_manager, virtual_model_configs,
+                provider_manager=mock_provider_manager
+            )
+            async with client:
+                request_body = {
+                    "model": "test-model-2",  # 有fallback
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "stream": False
+                }
+                response = await client.post("/v1/chat/completions", json=request_body)
+                assert response.status_code == 200
+                data = response.json()
+                assert data["choices"][0]["message"]["content"] == "Fallback content"
+
+                # 验证模型没有被禁用或冷却
+                status = await test_model_manager.get_status()
+                disabled_ids = [item["id"] for item in status["disabled_list"]]
+                cooldown_ids = [item["id"] for item in status["cooldown_list"]]
+                assert "Qwen/Qwen3-393B" not in disabled_ids
+                assert "Qwen/Qwen3-393B" not in cooldown_ids
+
+                # 验证post被调用了两次（一次是模型，一次是fallback）
+                assert mock_client.post.call_count == 2
+
+            await close_client()
+
 
 @pytest.mark.asyncio
 class TestLogResponse:

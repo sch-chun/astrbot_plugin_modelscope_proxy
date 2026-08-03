@@ -17,7 +17,7 @@
     "hint": "建议保持 127.0.0.1 (仅本机访问)，若需外部访问可改为 0.0.0.0"
   },
   "proxy_api_key": {
-    "description": "代理服务自身 API Key (可选)",
+    "description": "代理服务自身 API Key",
     "type": "string",
     "default": "",
     "hint": "留空则不启用验证；设置后可防止未授权访问"
@@ -32,6 +32,12 @@
     "type": "int",
     "default": 0,
     "hint": "例如设为 10，则剩余额度 ≤10 时本插件将不再发起请求，保留至少 10 次给其他功能"
+  },
+  "image_auto_compress": {
+    "description": "自动压缩大图片",
+    "type": "bool",
+    "default": true,
+    "hint": "多模态模型限制：尺寸 ≤ 2048x2048，大小 ≤ 5MB"
   },
   "virtual_models": {
     "description": "虚拟模型配置列表，每个虚拟模型有独立的模型回退列表和可选的兜底模型",

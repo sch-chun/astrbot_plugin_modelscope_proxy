@@ -10,4 +10,5 @@ class ProxyConfig:
     proxy_api_key: str = ""
     log_response: bool = False
     global_quota_reserve: int = 0
+    image_auto_compress: bool = True
     virtual_models: list[dict] = field(default_factory=list)

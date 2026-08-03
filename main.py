@@ -1,5 +1,5 @@
 """
-ModelScope Auto Proxy — AstrBot 插件版 v0.4.1
+ModelScope Auto Proxy — AstrBot 插件版
 
 保留原项目 core 转发逻辑，去掉 WebUI，配置项全走 AstrBot 插件配置管理。
 支持多虚拟模型配置、兜底模型、全局额度保留、API Key 验证和自定义监听地址。
@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI
 import socket
 
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star
 from astrbot.api import logger, AstrBotConfig
 
 # ---------- 兼容导入 ----------
@@ -41,30 +41,17 @@ from datetime import datetime, timedelta
 
 META_PATH = Path(__file__).parent / "metadata.yaml"
 PLUGIN_NAME = "modelscope_proxy"
-AUTHOR = "sch-chun"
-DESC = "ModelScope 免费大模型自动代理插件"
-VERSION = "0.4.6"
-REPO = "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy"
+VERSION = "0.4.7"
 if META_PATH.exists():
     try:
         with open(META_PATH, "r", encoding="utf-8") as f:
             META = yaml.safe_load(f)
             PLUGIN_NAME = META.get("name", PLUGIN_NAME)
-            AUTHOR = META.get("author", "sch-chun")
-            DESC = META.get("desc", "ModelScope 免费大模型自动代理插件")
-            VERSION = META.get("version", "0.4.6")
-            REPO = META.get("repo", "https://github.com/sch-chun/astrbot_plugin_modelscope_proxy")
+            VERSION = META.get("version", "0.4.7")
     except Exception as e:
         logger.error(f"读取插件元数据失败: {e}")
 
 
-@register(
-    PLUGIN_NAME,
-    AUTHOR,
-    DESC,
-    VERSION,
-    REPO
-)
 class ModelScopeProxyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
         super().__init__(context)
@@ -134,6 +121,7 @@ class ModelScopeProxyPlugin(Star):
         proxy_api_key = self.config.get("proxy_api_key", "")
         log_response = bool(self.config.get("log_response", False))
         global_quota_reserve = int(self.config.get("global_quota_reserve", 0))
+        image_auto_compress = bool(self.config.get("image_auto_compress", True))
 
         # 4. 创建 ProxyConfig
         self._proxy_config = ProxyConfig(
@@ -144,6 +132,7 @@ class ModelScopeProxyPlugin(Star):
             proxy_api_key=proxy_api_key,
             log_response=log_response,
             global_quota_reserve=global_quota_reserve,
+            image_auto_compress=image_auto_compress,
             virtual_models=self._virtual_models
         )
 

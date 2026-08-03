@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.7] - 2026-08-02
+
+### Added
+- 添加了图片超限检查与超限图片自动压缩功能，并配套了测试
+
+### Changed
+- 移除了多余的 register 装饰器
+
+### Fixed
+- 修复了开启日志调试时 SSE 不会透传的问题
+
 ## [0.4.6] - 2026-08-01
 
 ### Fixed

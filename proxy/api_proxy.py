@@ -8,10 +8,12 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 import asyncio
+
 from typing import Optional, Any, AsyncGenerator
 
 from .model_manager import ModelManager
 from .config import ProxyConfig
+from .img import preprocess_image_messages, ImageConstraintError
 
 from astrbot.api import logger
 from astrbot.core.provider.sources.openai_source import ProviderOpenAIOfficial
@@ -220,6 +222,10 @@ def create_proxy_router(
                     if "has no provider supported" in resp.text:
                         await model_manager_ref.mark_disabled(model_id, error_msg)
                         raise RetryableError("Model disabled due to unsupported provider")
+                    elif "image file size exceed" in resp.text or "input size exceed" in error_msg:
+
+                        # 不标记冷却，直接抛出 ImageConstraintError 让上层进入 fallback
+                        raise ImageConstraintError(error_msg)
                     else:
                         await model_manager_ref.mark_cooldown(model_id, error_msg)
                         raise RetryableError("Model on cooldown")
@@ -315,10 +321,11 @@ def create_proxy_router(
                     if resp.status_code in (402, 404, 500, 502, 503):
                         error_body = await resp.aread()
                         await req.__aexit__(None, None, None)
-                        error_msg = f"HTTP {resp.status_code}: {error_body.decode('utf-8', errors='replace')[:200]}"
+                        error_dec = error_body.decode('utf-8', errors='replace')
+                        error_msg = f"HTTP {resp.status_code}: {error_dec[:200]}"
                         logger.warning(f"模型 {model_id} 流式错误: {error_msg}")
                         if log_resp:
-                            logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_body.decode('utf-8', errors='replace')[:2000]}")
+                            logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_dec[:2000]}")
                         if await model_manager_ref.is_user_quota_exhausted():
                             return _quota_exhausted_response()
                         await model_manager_ref.mark_disabled(model_id, error_msg)
@@ -327,16 +334,21 @@ def create_proxy_router(
                     if resp.status_code == 400:
                         error_body = await resp.aread()
                         await req.__aexit__(None, None, None)
-                        error_msg = f"HTTP 400: {error_body.decode('utf-8', errors='replace')[:200]}"
+                        error_dec = error_body.decode('utf-8', errors='replace')
+                        error_msg = f"HTTP 400: {error_dec[:200]}"
                         logger.warning(f"模型 {model_id} 流式 400: {error_msg}")
                         if log_resp:
-                            logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_body.decode('utf-8', errors='replace')[:2000]}")
+                            logger.info(f"[响应日志] 模型={model_id} status={resp.status_code} body={error_dec[:2000]}")
                         if await model_manager_ref.is_user_quota_exhausted():
                             return _quota_exhausted_response()
                         
-                        if "has no provider supported" in error_body.decode('utf-8', errors='replace'):
+                        if "has no provider supported" in error_dec:
                             await model_manager_ref.mark_disabled(model_id, error_msg)
                             raise RetryableError("Model disabled due to unsupported provider")
+                        elif "image file size exceed" in error_dec or "input size exceed" in error_dec:
+
+                            # 不标记冷却，直接抛出 ImageConstraintError 让上层进入 fallback
+                            raise ImageConstraintError(error_msg)
                         else:
                             await model_manager_ref.mark_cooldown(model_id, error_msg)
                             raise RetryableError("Model on cooldown")
@@ -368,16 +380,12 @@ def create_proxy_router(
                     logger.info(f"模型 {model_id} 流式请求成功")
 
                 collected_text = []
-                injected = False
-
                 async def stream_generator() -> AsyncGenerator:
-                    nonlocal injected
                     try:
                         async for chunk in resp.aiter_bytes():
                             if log_resp:
                                 _collect_stream_text(chunk, collected_text)
-                            else:
-                                yield chunk
+                            yield chunk
                     finally:
                         if log_resp and collected_text:
                             full_text = "".join(collected_text)
@@ -462,6 +470,21 @@ def create_proxy_router(
             else:
                 return _quota_exhausted_response()
 
+        # 预处理图片（抛出 ImageConstraintError 则直接进入 fallback）
+        try:
+            body["messages"] = preprocess_image_messages(body.get("messages", []), config)
+        except ImageConstraintError as e:
+
+            # 直接进入 fallback 逻辑（或返回错误）
+            if fallback:
+                logger.info(f"图片超限，使用虚拟模型 '{requested_model}' 的兜底模型")
+                return await _call_fallback(fallback, body, is_stream, log_resp, timeout)
+            else:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": {"message": str(e), "type": "image_constraint_error"}}
+                )
+
         for attempt in range(MAX_RETRIES):
             model = await model_manager.get_first_available(model_list)
             if model is None:
@@ -490,6 +513,11 @@ def create_proxy_router(
                     model_manager_ref=model_manager,
                 )
                 return response
+            except ImageConstraintError as e:
+
+                # 直接进入 fallback 逻辑（或返回错误）
+                logger.info(f"图片超限，使用虚拟模型 '{requested_model}' 的兜底模型")
+                break
             except RetryableError:
                 continue
             except Exception as e:
