@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "display_name": "ModelScope Proxy",
+    "short_desc": "Auto-proxy plugin for ModelScope free LLMs",
+    "desc": "Manually configure model_list, expose an OpenAI-compatible API with automatic failover and smart rate limiting."
+  },
+  "config": {
+    "modelscope_api_key": {
+      "description": "ModelScope API Key",
+      "hint": "Get it at https://modelscope.cn/my/myaccesstoken"
+    },
+    "proxy_port": {
+      "description": "Proxy listening port"
+    },
+    "proxy_host": {
+      "description": "Proxy listening address",
+      "hint": "Keep 127.0.0.1 for local-only access; use 0.0.0.0 to allow external access"
+    },
+    "proxy_api_key": {
+      "description": "Proxy API Key",
+      "hint": "Leave empty to disable authentication; set to prevent unauthorized access"
+    },
+    "log_response": {
+      "description": "Log upstream response content (for debugging)"
+    },
+    "global_quota_reserve": {
+      "description": "Global user quota reserve (requests)",
+      "hint": "e.g. set to 10, the plugin stops making requests when remaining quota ≤ 10, preserving at least 10 requests for other features"
+    },
+    "image_auto_compress": {
+      "description": "Auto-compress large images",
+      "hint": "Multimodal model limits: ≤ 2048x2048 pixels, ≤ 5MB"
+    },
+    "virtual_models": {
+      "description": "Virtual model config list. Each virtual model has its own fallback list and optional fallback provider.",
+      "templates": {
+        "default": {
+          "name": "Virtual Model Config",
+          "hint": "Configure an exposed model name and its fallback list",
+          "model_list": {
+            "description": "ModelScope model fallback list (by priority)",
+            "hint": "Example: [\"deepseek-ai/DeepSeek-V4-Flash\", \"deepseek-ai/DeepSeek-V3.2\"], at least one required"
+          },
+          "timeout": {
+            "description": "Request timeout in seconds (connection + read)",
+            "hint": "Set a longer value, e.g. 120, for slow model generation"
+          },
+          "fallback": {
+            "description": "Fallback model provider (optional, when all ModelScope models are unavailable)",
+            "hint": "Select a configured provider as fallback; leave empty for none"
+          }
+        }
+      }
+    }
+  },
+  "pages": {
+    "monitor": {
+      "title": "Quota Monitor",
+      "description": "View real-time remaining quota and status of each ModelScope model",
+      "no_quota_info": "Quota info unavailable",
+      "available_count": "{n} requests available",
+      "reserved_count": "({n} reserved)",
+      "total_count": " / {n} total",
+      "no_virtual_models": "No virtual models configured",
+      "has_fallback": "🔁 Fallback enabled",
+      "no_fallback": "No fallback",
+      "no_models": "No models configured in this virtual model",
+      "exhausted": "Exhausted",
+      "disabled": "Disabled",
+      "cooldown": "Cooling down",
+      "available": "Available",
+      "count_remaining": "{n} remaining",
+      "not_obtained": "Unknown",
+      "load_failed": "Load failed, please retry",
+      "last_update": "Last updated: {time}",
+      "refresh": "🔄 Refresh"
+    }
+  }
+}
