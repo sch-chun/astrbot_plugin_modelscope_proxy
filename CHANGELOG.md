@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.8] - 2026-08-03
+
+### Added
+- **插件国际化 (i18n) 支持**：新增 `.astrbot-plugin/i18n/` 目录，提供 `zh-CN.json` 和 `en-US.json` 语言文件
+  - 覆盖 metadata（插件名称、描述）、config（配置项文案）、pages（监控页面文案）
+  - 监控页面 `app.js` 中所有硬编码文案改为 `bridge.t()` 调用
+  - 新增 `bridge.onContext()` 监听，支持 WebUI 语言热切换
+
 ## [0.4.7] - 2026-08-02
 
 ### Added
@@ -49,7 +57,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **自引用回退检测**：初始化时自动检测虚拟模型的 `fallback` 是否指向代理服务自身（基于 `api_base` 的主机与端口）。若检测到，则发出警告并自动禁用该兜底配置，避免级联失败和无限递归。
-- **402 错误处理**：ModelScope 返回 402（余额不足/配额用尽）时，插件会将该模型标记为“今日不可用”并自动切换到下一个可用模型，最终触发兜底逻辑（若已配置）。
+- **402 错误处理**：ModelScope 返回 402（余额不足/配额用尽）时，插件会将该模型标记为"今日不可用"并自动切换到下一个可用模型，最终触发兜底逻辑（若已配置）。
 
 ### Changed
 - **配置 Schema 优化**：将 `fallback` 字段改为选择提供商，便于配置
@@ -69,7 +77,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - 请求超时不再禁用全天
-- 模型额度为 0 时将显示 “已耗尽”
+- 模型额度为 0 时将显示 "已耗尽"
 - 添加 Logo
 
 ## [0.3.1] - 2026-06-21
@@ -85,7 +93,7 @@ All notable changes to this project will be documented in this file.
 - **代理服务 API Key 验证**：新增 `proxy_api_key` 配置，保护代理服务自身免受未授权访问
 - **可配置监听地址**：新增 `proxy_host` 配置（默认 `127.0.0.1`），支持绑定到特定 IP，提高安全性
 - **启动时模型校验**：初始化时自动请求 ModelScope 的 `/v1/models` 接口，验证配置的模型是否有效，自动移除无效模型并记录警告
-- **监控页面**：新增插件 Pages 监控面板，可视化展示用户全局额度、各虚拟模型下每个 ModelScope 模型的剩余额度和状态（可用/禁用/冷却）
+- **监控页面**：新增插件 Pages 监控面板，可视化展示用户全局额度、各虚拟模型下每一个 ModelScope 模型的剩余额度和状态（可用/禁用/冷却）
 - **单元测试全面覆盖**：重写并新增测试用例，覆盖多虚拟模型、兜底、API Key 验证、全局保留值、日志开关等特性
 
 ### Changed
