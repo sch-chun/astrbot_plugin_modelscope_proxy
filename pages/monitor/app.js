@@ -119,8 +119,20 @@ function renderVirtualModels(virtualModels) {
 }
 
 function renderUI() {
-  // 更新刷新按钮文本
-  document.getElementById('refresh-btn').textContent = t('pages.monitor.refresh', '🔄 刷新');
+  // 静态 HTML 文案
+  const heading = document.querySelector('header h1');
+  if (heading) heading.textContent = t('pages.monitor.heading', '📊 ModelScope 额度监控');
+
+  const userQuotaTitle = document.querySelector('#user-quota h2');
+  if (userQuotaTitle) userQuotaTitle.textContent = t('pages.monitor.user_quota_title', '用户全局额度');
+
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) refreshBtn.textContent = t('pages.monitor.refresh', '🔄 刷新');
+
+  const loadingSpan = document.getElementById('user-quota-text');
+  if (loadingSpan && loadingSpan.textContent === '加载中...' || loadingSpan.textContent === 'Loading...') {
+    loadingSpan.textContent = t('pages.monitor.loading', '加载中...');
+  }
 }
 
 async function refreshDashboard() {
