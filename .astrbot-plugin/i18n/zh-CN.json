@@ -21,7 +21,7 @@
       "hint": "留空则不启用验证；设置后可防止未授权访问"
     },
     "log_response": {
-      "description": "将上游响应内容打印到日志（调试用）"
+      "description": "响应内容打印到日志（调试用）"
     },
     "global_quota_reserve": {
       "description": "全局用户额度保留值（次）",
@@ -32,21 +32,25 @@
       "hint": "多模态模型限制：尺寸 ≤ 2048x2048，大小 ≤ 5MB"
     },
     "virtual_models": {
-      "description": "虚拟模型配置列表，每个虚拟模型有独立的模型回退列表和可选的兜底模型",
+      "description": "虚拟模型配置列表",
+      "hint": "每个虚拟模型有独立的模型回退列表和可选的兜底模型",
       "templates": {
         "default": {
           "name": "虚拟模型配置",
           "hint": "配置一个对外暴露的模型名称及其回退列表",
+          "model_name": {
+            "description": "虚拟模型名称"
+          },
           "model_list": {
-            "description": "ModelScope 模型回退列表（按优先级排序）",
+            "description": "回退列表",
             "hint": "示例：[\"deepseek-ai/DeepSeek-V4-Flash\", \"deepseek-ai/DeepSeek-V3.2\"]，至少配置一个"
           },
           "timeout": {
-            "description": "请求超时时间（秒），包括连接和读取超时",
-            "hint": "设置更长的时间，例如 120，以应对大模型生成慢的情况"
+            "description": "超时时间（秒）",
+            "hint": "设置更长的时间以应对大模型生成慢的情况"
           },
           "fallback": {
-            "description": "兜底模型配置（可选，当所有 ModelScope 模型不可用时使用）",
+            "description": "兜底模型",
             "hint": "选择一个已配置的模型提供商作为兜底，留空则无兜底"
           }
         }
