@@ -21,7 +21,7 @@
       "hint": "Leave empty to disable authentication; set to prevent unauthorized access"
     },
     "log_response": {
-      "description": "Log upstream response content (for debugging)"
+      "description": "Log upstream response content"
     },
     "global_quota_reserve": {
       "description": "Global user quota reserve (requests)",
@@ -32,21 +32,25 @@
       "hint": "Multimodal model limits: ≤ 2048x2048 pixels, ≤ 5MB"
     },
     "virtual_models": {
-      "description": "Virtual model config list. Each virtual model has its own fallback list and optional fallback provider.",
+      "description": "Virtual model config list",
+      "hint": "Each virtual model has its own fallback list and optional fallback provider",
       "templates": {
         "default": {
           "name": "Virtual Model Config",
           "hint": "Configure an exposed model name and its fallback list",
+          "model_name": {
+            "description": "Virtual model name"
+          },
           "model_list": {
-            "description": "ModelScope model fallback list (by priority)",
+            "description": "Fallback list",
             "hint": "Example: [\"deepseek-ai/DeepSeek-V4-Flash\", \"deepseek-ai/DeepSeek-V3.2\"], at least one required"
           },
           "timeout": {
-            "description": "Request timeout in seconds (connection + read)",
-            "hint": "Set a longer value, e.g. 120, for slow model generation"
+            "description": "Request timeout in seconds",
+            "hint": "Set a longer value for slow model generation"
           },
           "fallback": {
-            "description": "Fallback model provider (optional, when all ModelScope models are unavailable)",
+            "description": "Fallback model provider",
             "hint": "Select a configured provider as fallback; leave empty for none"
           }
         }
