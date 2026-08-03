@@ -41,13 +41,13 @@ from datetime import datetime, timedelta
 
 META_PATH = Path(__file__).parent / "metadata.yaml"
 PLUGIN_NAME = "modelscope_proxy"
-VERSION = "0.4.7"
+VERSION = "0.4.9"
 if META_PATH.exists():
     try:
         with open(META_PATH, "r", encoding="utf-8") as f:
             META = yaml.safe_load(f)
             PLUGIN_NAME = META.get("name", PLUGIN_NAME)
-            VERSION = META.get("version", "0.4.7")
+            VERSION = META.get("version", "0.4.9")
     except Exception as e:
         logger.error(f"读取插件元数据失败: {e}")
 

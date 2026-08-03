@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.9] - 2026-08-03
+
+### Added
+- 添加俄语国际化
+
 ## [0.4.8] - 2026-08-03
 
 ### Added
