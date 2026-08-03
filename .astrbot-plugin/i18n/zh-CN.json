@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "display_name": "ModelScope Proxy",
+    "short_desc": "ModelScope 免费大模型自动代理插件",
+    "desc": "手动配置 model_list，暴露 OpenAI 兼容的 API，支持自动故障切换和智能限速处理。"
+  },
+  "config": {
+    "modelscope_api_key": {
+      "description": "ModelScope API 密钥",
+      "hint": "在 https://modelscope.cn/my/myaccesstoken 获取"
+    },
+    "proxy_port": {
+      "description": "代理服务监听端口"
+    },
+    "proxy_host": {
+      "description": "代理服务监听地址",
+      "hint": "建议保持 127.0.0.1 (仅本机访问)，若需外部访问可改为 0.0.0.0"
+    },
+    "proxy_api_key": {
+      "description": "代理服务自身 API Key",
+      "hint": "留空则不启用验证；设置后可防止未授权访问"
+    },
+    "log_response": {
+      "description": "将上游响应内容打印到日志（调试用）"
+    },
+    "global_quota_reserve": {
+      "description": "全局用户额度保留值（次）",
+      "hint": "例如设为 10，则剩余额度 ≤10 时本插件将不再发起请求，保留至少 10 次给其他功能"
+    },
+    "image_auto_compress": {
+      "description": "自动压缩大图片",
+      "hint": "多模态模型限制：尺寸 ≤ 2048x2048，大小 ≤ 5MB"
+    },
+    "virtual_models": {
+      "description": "虚拟模型配置列表，每个虚拟模型有独立的模型回退列表和可选的兜底模型",
+      "templates": {
+        "default": {
+          "name": "虚拟模型配置",
+          "hint": "配置一个对外暴露的模型名称及其回退列表",
+          "model_list": {
+            "description": "ModelScope 模型回退列表（按优先级排序）",
+            "hint": "示例：[\"deepseek-ai/DeepSeek-V4-Flash\", \"deepseek-ai/DeepSeek-V3.2\"]，至少配置一个"
+          },
+          "timeout": {
+            "description": "请求超时时间（秒），包括连接和读取超时",
+            "hint": "设置更长的时间，例如 120，以应对大模型生成慢的情况"
+          },
+          "fallback": {
+            "description": "兜底模型配置（可选，当所有 ModelScope 模型不可用时使用）",
+            "hint": "选择一个已配置的模型提供商作为兜底，留空则无兜底"
+          }
+        }
+      }
+    }
+  },
+  "pages": {
+    "monitor": {
+      "title": "额度监控",
+      "description": "实时查看 ModelScope 各模型的剩余额度与状态",
+      "no_quota_info": "未获取到额度信息",
+      "available_count": "可用 {n} 次",
+      "reserved_count": "（保留 {n} 次）",
+      "total_count": " / 总额度 {n} 次",
+      "no_virtual_models": "暂无虚拟模型配置",
+      "has_fallback": "🔁 有兜底",
+      "no_fallback": "无兜底",
+      "no_models": "该虚拟模型下无配置模型",
+      "exhausted": "已耗尽",
+      "disabled": "已禁用",
+      "cooldown": "冷却中",
+      "available": "可用",
+      "count_remaining": "{n} 次剩余",
+      "not_obtained": "未获取",
+      "load_failed": "加载失败，请重试",
+      "last_update": "最后更新: {time}",
+      "refresh": "🔄 刷新"
+    }
+  }
+}
