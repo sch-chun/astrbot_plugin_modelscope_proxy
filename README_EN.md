@@ -1,12 +1,12 @@
-# ⚠️ DEPRECATED / 已归档
+# ⚠️ DEPRECATED
 
 > **This plugin is no longer maintained. Reason:**
 >
-> Since August 5, 2026, ModelScope has rolled out the "魔粒" (Magic Beans) credit system, replacing the previous daily fixed free call quota. The API-Inference response headers no longer return `modelscope-ratelimit-*-remaining` quota information. The **quota monitoring** functionality that this plugin depends on is no longer functional.
+> Since August 5, 2026, ModelScope has rolled out the "魔粒" (Magicube) credit system, replacing the previous daily fixed free call quota. The API-Inference response headers no longer return `modelscope-ratelimit-*-remaining` quota information. The **quota monitoring** functionality that this plugin depends on is no longer functional.
 >
-> The intelligent fallback logic (error-driven model switching, 429 cooldown, image compression, etc.) has been ported to the [generic_fallback](https://github.com/sch-chun/astrbot_plugin_generic_fallback) universal fallback proxy plugin. Migration is recommended.
+> The intelligent fallback logic (error-driven model switching, 429 cooldown, image compression, etc.) will be possibly ported to the [generic_fallback](https://github.com/sch-chun/astrbot_plugin_generic_fallback) universal fallback proxy plugin. Migration is recommended.
 >
-> To continue using ModelScope's free API, consider configuring it as a regular OpenAI-compatible Provider. For higher stability, consider commercial APIs such as [Alibaba Cloud Bailian](https://www.aliyun.com/product/bailian).
+> To continue using ModelScope's free API, consider configuring it as a regular OpenAI-compatible Provider.
 
 ---
 

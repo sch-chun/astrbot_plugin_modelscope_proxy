@@ -4,9 +4,9 @@
 >
 > 2026 年 8 月 5 日起，ModelScope 魔搭社区全面上线「魔粒」积分体系，替代原有的每日固定免费调用次数。API-Inference 的响应头中不再返回 `modelscope-ratelimit-*-remaining` 等额度信息，本插件依赖的**额度监控**功能已无法工作。
 >
-> 插件的智能回退逻辑（错误驱动模型切换、429 冷却、图片压缩等）已移植至 [generic_fallback](https://github.com/sch-chun/astrbot_plugin_generic_fallback) 通用回退代理插件，推荐迁移使用。
+> 插件的智能回退逻辑（错误驱动模型切换、429 冷却、图片压缩等）可能将移植至 [generic_fallback](https://github.com/sch-chun/astrbot_plugin_generic_fallback) 通用回退代理插件，推荐迁移使用。
 >
-> 如需继续使用 ModelScope 免费 API，建议直接配置为普通 OpenAI 兼容 Provider；如需更高稳定性，请考虑 [阿里云百炼](https://www.aliyun.com/product/bailian) 等商业 API。
+> 如需继续使用 ModelScope 免费 API，建议直接配置为普通 OpenAI 兼容 Provider。
 
 ---
 
